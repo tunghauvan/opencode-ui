@@ -26,6 +26,8 @@ class CreateSessionRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     prompt: str
+    provider_id: Optional[str] = "github-copilot"
+    model_id: Optional[str] = "gpt-5-mini"
 
 class SessionResponse(BaseModel):
     id: str
@@ -100,7 +102,12 @@ async def delete_session(session_id: str):
 async def chat(session_id: str, request: ChatRequest):
     """Send a chat message"""
     try:
-        response = opencode_service.send_prompt(session_id, request.prompt)
+        response = opencode_service.send_prompt(
+            session_id, 
+            request.prompt,
+            provider_id=request.provider_id,
+            model_id=request.model_id
+        )
         # Handle different response formats
         if hasattr(response, 'content'):
             content = response.content
@@ -124,6 +131,14 @@ async def chat(session_id: str, request: ChatRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send message: {str(e)}")
+
+@app.get("/api/models")
+async def get_models():
+    """Get available providers and models"""
+    try:
+        return opencode_service.get_providers_and_models()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get models: {str(e)}")
 
 @app.get("/health")
 async def health_check():

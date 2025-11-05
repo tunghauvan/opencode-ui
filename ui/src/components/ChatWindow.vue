@@ -75,6 +75,7 @@
 
     <!-- Input Area -->
     <div class="bg-white border-t border-gray-200 px-6 py-4">
+      <div class="mb-2 text-xs text-gray-400">Debug: ChatInput loaded</div>
       <ChatInput
         v-model="inputMessage"
         :disabled="chatStore.loading || chatStore.streaming"
@@ -84,12 +85,17 @@
       <div v-if="chatStore.error" class="mt-2 text-sm text-red-600">
         {{ chatStore.error }}
       </div>
+      
+      <!-- Current Model Display -->
+      <div class="mt-2 text-xs text-gray-500 text-center">
+        Model: {{ currentModelDisplay }}
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useSessionStore } from '../stores/session'
 import { useChatStore } from '../stores/chat'
 import MessageBubble from './MessageBubble.vue'
@@ -109,6 +115,19 @@ const messages = computed(() => {
 const sessionTitle = computed(() => {
   const session = sessionStore.currentSession
   return session?.title || session?.name || 'Chat Session'
+})
+
+const currentModelDisplay = computed(() => {
+  const provider = chatStore.selectedProvider
+  const model = chatStore.selectedModel
+  return `${provider}/${model}`
+})
+
+// Load models on mount
+onMounted(async () => {
+  if (!chatStore.availableModels) {
+    await chatStore.fetchModels()
+  }
 })
 
 async function handleSendMessage() {

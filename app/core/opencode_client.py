@@ -63,7 +63,7 @@ class OpenCodeService:
             return True
         return self.client.session.delete(session_id)
 
-    def send_prompt(self, session_id: str, prompt: str) -> Dict[str, Any]:
+    def send_prompt(self, session_id: str, prompt: str, provider_id: str = "github-copilot", model_id: str = "gpt-5-mini") -> Dict[str, Any]:
         """Send a prompt to a session"""
         if self.use_mock:
             return {
@@ -73,10 +73,33 @@ class OpenCodeService:
             }
         return self.client.session.chat(
             session_id,
-            model_id="default",
+            model_id=model_id,
             parts=[{"type": "text", "text": prompt}],
-            provider_id="default"
+            provider_id=provider_id
         )
+
+    def get_providers_and_models(self) -> Dict[str, Any]:
+        """Get available providers and models"""
+        if self.use_mock:
+            return {
+                "providers": [
+                    {
+                        "id": "github-copilot",
+                        "name": "GitHub Copilot",
+                        "models": {
+                            "gpt-5-mini": {"id": "gpt-5-mini", "name": "GPT-5-mini"},
+                            "gpt-4o": {"id": "gpt-4o", "name": "GPT-4o"}
+                        }
+                    }
+                ],
+                "default": {"github-copilot": "gpt-5-mini"}
+            }
+        
+        # Use HTTP client to get providers
+        url = f"{settings.OPENCODE_BASE_URL}/config/providers"
+        response = httpx.get(url, timeout=30.0)
+        response.raise_for_status()
+        return response.json()
 
 # Global instance
 opencode_service = OpenCodeService()

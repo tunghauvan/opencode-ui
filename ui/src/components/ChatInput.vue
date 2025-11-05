@@ -12,6 +12,28 @@
         rows="1"
       ></textarea>
       
+      <select
+        v-model="selectedProvider"
+        @change="onProviderChange"
+        class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+        :disabled="disabled"
+      >
+        <option v-for="provider in providers" :key="provider.id" :value="provider.id">
+          {{ provider.name }}
+        </option>
+      </select>
+      
+      <select
+        v-model="selectedModel"
+        @change="onModelChange"
+        class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+        :disabled="disabled"
+      >
+        <option v-for="(model, modelId) in currentModels" :key="modelId" :value="modelId">
+          {{ model.name }}
+        </option>
+      </select>
+      
       <button
         @click="handleSend"
         :disabled="disabled || !localValue.trim()"
@@ -27,7 +49,8 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
+import { useChatStore } from '../stores/chat'
 
 const props = defineProps({
   modelValue: {
@@ -42,8 +65,22 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'send'])
 
+const chatStore = useChatStore()
 const localValue = ref(props.modelValue)
 const textareaRef = ref(null)
+const selectedProvider = ref(chatStore.selectedProvider)
+const selectedModel = ref(chatStore.selectedModel)
+
+const providers = computed(() => {
+  if (!chatStore.availableModels || !chatStore.availableModels.providers) return []
+  return chatStore.availableModels.providers
+})
+
+const currentModels = computed(() => {
+  if (!chatStore.availableModels || !selectedProvider.value) return {}
+  const provider = providers.value.find(p => p.id === selectedProvider.value)
+  return provider?.models || {}
+})
 
 watch(() => props.modelValue, (newValue) => {
   localValue.value = newValue
@@ -52,6 +89,38 @@ watch(() => props.modelValue, (newValue) => {
 watch(localValue, (newValue) => {
   emit('update:modelValue', newValue)
 })
+
+watch(() => chatStore.selectedProvider, (newVal) => {
+  selectedProvider.value = newVal
+})
+
+watch(() => chatStore.selectedModel, (newVal) => {
+  selectedModel.value = newVal
+})
+
+watch(() => chatStore.selectedProvider, () => {
+  // If provider changes, select first model
+  const models = currentModels.value
+  const firstModelId = Object.keys(models)[0]
+  if (firstModelId) {
+    selectedModel.value = firstModelId
+    chatStore.setModel(chatStore.selectedProvider, selectedModel.value)
+  }
+})
+
+function onProviderChange() {
+  // Select first model of the new provider
+  const models = currentModels.value
+  const firstModelId = Object.keys(models)[0]
+  if (firstModelId) {
+    selectedModel.value = firstModelId
+    chatStore.setModel(selectedProvider.value, selectedModel.value)
+  }
+}
+
+function onModelChange() {
+  chatStore.setModel(selectedProvider.value, selectedModel.value)
+}
 
 function handleEnter(event) {
   if (event.shiftKey) {

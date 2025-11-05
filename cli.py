@@ -120,13 +120,14 @@ class OpenCodeCLI:
         except Exception as e:
             print(f"Error retrieving session history: {e}")
 
-    def chat(self, session_id: str, message: str):
+    def chat(self, session_id: str, message: str, provider_id: str = "github-copilot", model_id: str = "gpt-5-mini"):
         """Send a chat message to a session"""
         try:
             print(f"You: {message}\n")
+            print(f"Using: {provider_id}/{model_id}\n")
 
             # Send the message
-            result = self.service.send_prompt(session_id, message)
+            result = self.service.send_prompt(session_id, message, provider_id, model_id)
 
             print("Assistant:", end=" ")
             # Handle the response object
@@ -181,6 +182,7 @@ Examples:
   python cli.py history <session_id>        # Show full chat history
   python cli.py history <session_id> --limit 10  # Show last 10 messages
   python cli.py chat <session_id> "Hello!"  # Send a message
+  python cli.py chat <session_id> "Hello!" --provider github-copilot --model gpt-5-mini
   python cli.py test                        # Test connection
         """
     )
@@ -215,6 +217,18 @@ Examples:
         help="Limit number of messages to show"
     )
 
+    parser.add_argument(
+        "--provider",
+        default="github-copilot",
+        help="Provider ID for chat (default: github-copilot)"
+    )
+
+    parser.add_argument(
+        "--model",
+        default="gpt-5-mini",
+        help="Model ID for chat (default: gpt-5-mini)"
+    )
+
     args = parser.parse_args()
 
     # Create CLI instance
@@ -241,7 +255,7 @@ Examples:
             print("Error: Session ID and message required for chat command")
             sys.exit(1)
         session_id, message = args.args[0], " ".join(args.args[1:])
-        cli.chat(session_id, message)
+        cli.chat(session_id, message, args.provider, args.model)
 
 
 if __name__ == "__main__":

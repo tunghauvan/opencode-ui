@@ -8,6 +8,12 @@ export const useChatStore = defineStore('chat', () => {
   const loading = ref(false)
   const error = ref(null)
   const streaming = ref(false)
+  
+  // Model selection state
+  const selectedProvider = ref('github-copilot')
+  const selectedModel = ref('gpt-5-mini')
+  const availableModels = ref(null)
+  const modelsLoading = ref(false)
 
   // Load messages from localStorage on initialization
   const loadMessagesFromStorage = () => {
@@ -71,7 +77,10 @@ export const useChatStore = defineStore('chat', () => {
     })
 
     try {
-      const response = await opencodeApi.sendMessage(sessionId, prompt)
+      const response = await opencodeApi.sendMessage(sessionId, prompt, {
+        provider_id: selectedProvider.value,
+        model_id: selectedModel.value
+      })
 
       // Add assistant message
       addMessage(sessionId, {
@@ -144,16 +153,48 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  async function fetchModels() {
+    modelsLoading.value = true
+    try {
+      const data = await opencodeApi.getModels()
+      availableModels.value = data
+      
+      // Set default provider and model if available
+      if (data.default) {
+        const firstProvider = Object.keys(data.default)[0]
+        if (firstProvider) {
+          selectedProvider.value = firstProvider
+          selectedModel.value = data.default[firstProvider]
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch models:', e)
+    } finally {
+      modelsLoading.value = false
+    }
+  }
+
+  function setModel(providerId, modelId) {
+    selectedProvider.value = providerId
+    selectedModel.value = modelId
+  }
+
   return {
     messagesBySession,
     loading,
     error,
     streaming,
+    selectedProvider,
+    selectedModel,
+    availableModels,
+    modelsLoading,
     getMessages,
     addMessage,
     sendMessage,
     sendMessageStream,
     clearMessages,
-    deleteSessionMessages
+    deleteSessionMessages,
+    fetchModels,
+    setModel
   }
 })

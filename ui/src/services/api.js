@@ -31,8 +31,19 @@ export const opencodeApi = {
   },
 
   // Chat
-  async sendMessage(sessionId, prompt) {
-    const response = await api.post(`/sessions/${sessionId}/chat`, { prompt })
+  async sendMessage(sessionId, prompt, options = {}) {
+    const { provider_id = 'github-copilot', model_id = 'gpt-5-mini' } = options
+    const response = await api.post(`/sessions/${sessionId}/chat`, { 
+      prompt,
+      provider_id,
+      model_id
+    })
+    return response.data
+  },
+
+  // Models
+  async getModels() {
+    const response = await api.get('/models')
     return response.data
   },
 
