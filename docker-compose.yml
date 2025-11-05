@@ -1,0 +1,35 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+      - ./requirements.txt:/app/requirements.txt
+    environment:
+      - OPENCODE_BASE_URL=http://host.docker.internal:4096
+      - USE_MOCK=false
+    networks:
+      - opencode-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./ui:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://backend:8000
+    networks:
+      - opencode-network
+
+networks:
+  opencode-network:
+    driver: bridge
