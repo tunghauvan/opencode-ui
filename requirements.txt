@@ -1,0 +1,2 @@
+opencode-ai==0.1.0a36
+pydantic>=2.7.0

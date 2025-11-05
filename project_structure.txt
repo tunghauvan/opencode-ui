@@ -1,0 +1,20 @@
+opencode-python-server/
+├── app/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── api/
+│   │   ├── __init__.py
+│   │   ├── sessions.py
+│   │   ├── prompts.py
+│   │   └── events.py
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   └── opencode_client.py
+│   └── models/
+│       ├── __init__.py
+│       └── schemas.py
+├── requirements.txt
+├── README.md
+├── .gitignore
+└── pyproject.toml
