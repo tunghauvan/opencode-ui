@@ -69,36 +69,20 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null
     streaming.value = false
 
-    // Add user message
-    addMessage(sessionId, {
-      role: 'user',
-      content: prompt,
-      timestamp: new Date().toISOString()
-    })
-
     try {
       const response = await opencodeApi.sendMessage(sessionId, prompt, {
         provider_id: selectedProvider.value,
         model_id: selectedModel.value
       })
 
-      // Add assistant message
-      addMessage(sessionId, {
-        role: 'assistant',
-        content: response.content || response.message || JSON.stringify(response),
-        timestamp: new Date().toISOString()
-      })
+      // Reload messages from API to get the latest data
+      await loadMessages(sessionId)
     } catch (e) {
       error.value = 'Failed to send message'
       console.error(e)
 
-      // Add error message
-      addMessage(sessionId, {
-        role: 'assistant',
-        content: 'Sorry, I encountered an error processing your message.',
-        timestamp: new Date().toISOString(),
-        isError: true
-      })
+      // Reload messages to show any partial updates
+      await loadMessages(sessionId)
       throw e
     } finally {
       loading.value = false
@@ -110,20 +94,6 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null
     streaming.value = true
 
-    // Add user message
-    addMessage(sessionId, {
-      role: 'user',
-      content: prompt,
-      timestamp: new Date().toISOString()
-    })
-
-    // Add empty assistant message that will be updated
-    addMessage(sessionId, {
-      role: 'assistant',
-      content: '',
-      timestamp: new Date().toISOString()
-    })
-
     try {
       await opencodeApi.streamMessage(sessionId, prompt, (chunk) => {
         if (chunk.content) {
@@ -132,10 +102,15 @@ export const useChatStore = defineStore('chat', () => {
           lastMsg.content += chunk.content
         }
       })
+
+      // Reload messages from API to get the complete data
+      await loadMessages(sessionId)
     } catch (e) {
       error.value = 'Failed to stream message'
       console.error(e)
-      updateLastMessage(sessionId, 'Sorry, I encountered an error processing your message.')
+      
+      // Reload messages to show any partial updates
+      await loadMessages(sessionId)
       throw e
     } finally {
       loading.value = false
@@ -148,8 +123,22 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function deleteSessionMessages(sessionId) {
-    if (messagesBySession.value[sessionId]) {
-      delete messagesBySession.value[sessionId]
+    delete messagesBySession.value[sessionId]
+  }
+
+  async function loadMessages(sessionId) {
+    try {
+      const messages = await opencodeApi.getSessionMessages(sessionId)
+      messagesBySession.value[sessionId] = messages.map(msg => ({
+        ...msg,
+        timestamp: msg.timestamp ? new Date(msg.timestamp).toISOString() : new Date().toISOString()
+      }))
+    } catch (e) {
+      console.error('Failed to load messages:', e)
+      // Fallback to local storage if API fails
+      if (!messagesBySession.value[sessionId]) {
+        messagesBySession.value[sessionId] = []
+      }
     }
   }
 
@@ -194,6 +183,7 @@ export const useChatStore = defineStore('chat', () => {
     sendMessageStream,
     clearMessages,
     deleteSessionMessages,
+    loadMessages,
     fetchModels,
     setModel
   }

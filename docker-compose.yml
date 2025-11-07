@@ -1,4 +1,17 @@
 services:
+
+  opencode-agent:
+    build: .
+    volumes:
+      - ~/.local/share/opencode/auth.json:/root/.local/share/opencode/auth.json
+    # working directory inside the container
+    working_dir: /app
+    ports:
+      - "4096:4096"
+    command: ["opencode", "serve", "--port", "4096", "--hostname", "0.0.0.0", "--print-logs"]
+    networks:
+      - opencode-network
+
   backend:
     build:
       context: .
@@ -9,7 +22,7 @@ services:
       - ./app:/app/app
       - ./requirements.txt:/app/requirements.txt
     environment:
-      - OPENCODE_BASE_URL=http://host.docker.internal:4096
+      - OPENCODE_BASE_URL=http://opencode-agent:4096
       - USE_MOCK=false
     networks:
       - opencode-network
@@ -20,9 +33,6 @@ services:
       dockerfile: Dockerfile.frontend
     ports:
       - "3000:3000"
-    volumes:
-      - ./ui:/app
-      - /app/node_modules
     depends_on:
       - backend
     environment:

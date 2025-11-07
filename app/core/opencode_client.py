@@ -1,12 +1,14 @@
-"""
-OpenCode client wrapper
-"""
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import opencode_ai
 import os
 import httpx
 
 from app.core.config import settings
+
+class Model:
+    def __init__(self, providerID: str, modelID: str):
+        self.providerID = providerID
+        self.modelID = modelID
 
 class OpenCodeService:
     """Service for interacting with OpenCode API"""
@@ -63,7 +65,7 @@ class OpenCodeService:
             return True
         return self.client.session.delete(session_id)
 
-    def send_prompt(self, session_id: str, prompt: str, provider_id: str = "github-copilot", model_id: str = "gpt-5-mini") -> Dict[str, Any]:
+    def send_prompt(self, session_id: str, prompt: str, model: Model) -> Dict[str, Any]:
         """Send a prompt to a session"""
         if self.use_mock:
             return {
@@ -71,32 +73,48 @@ class OpenCodeService:
                 "session_id": session_id,
                 "info": {"cost": 0.01, "tokens": {"input": 10, "output": 20}}
             }
-        return self.client.session.chat(
-            session_id,
-            model_id=model_id,
-            parts=[{"type": "text", "text": prompt}],
-            provider_id=provider_id
-        )
-
-    def get_providers_and_models(self) -> Dict[str, Any]:
-        """Get available providers and models"""
-        if self.use_mock:
-            return {
-                "providers": [
-                    {
-                        "id": "github-copilot",
-                        "name": "GitHub Copilot",
-                        "models": {
-                            "gpt-5-mini": {"id": "gpt-5-mini", "name": "GPT-5-mini"},
-                            "gpt-4o": {"id": "gpt-4o", "name": "GPT-4o"}
-                        }
-                    }
-                ],
-                "default": {"github-copilot": "gpt-5-mini"}
-            }
         
-        # Use HTTP client to get providers
-        url = f"{settings.OPENCODE_BASE_URL}/config/providers"
+        # Use HTTP client directly to send with model object
+        url = f"{settings.OPENCODE_BASE_URL}/session/{session_id}/message"
+        body = {
+            "model": {
+                "providerID": model.providerID,
+                "modelID": model.modelID
+            },
+            "agent": "build",
+            "parts": [{"type": "text", "text": prompt}]
+        }
+        print("Sending request body:", body)  # Debug log
+        response = httpx.post(url, json=body, timeout=30.0)
+        response.raise_for_status()
+        return response.json()
+
+    def get_messages(self, session_id: str) -> List[Dict[str, Any]]:
+        """Get all messages from a session"""
+        if self.use_mock:
+            return [
+                {
+                    "info": {
+                        "id": "msg_mock_1",
+                        "sessionID": session_id,
+                        "role": "user",
+                        "time": {"created": 1731000000000}
+                    },
+                    "parts": [{"type": "text", "text": "Hello, how can I help you?"}]
+                },
+                {
+                    "info": {
+                        "id": "msg_mock_2", 
+                        "sessionID": session_id,
+                        "role": "assistant",
+                        "time": {"created": 1731000001000}
+                    },
+                    "parts": [{"type": "text", "text": "I'm doing well, thank you for asking!"}]
+                }
+            ]
+        
+        # Use HTTP client to get messages
+        url = f"{settings.OPENCODE_BASE_URL}/session/{session_id}/message"
         response = httpx.get(url, timeout=30.0)
         response.raise_for_status()
         return response.json()

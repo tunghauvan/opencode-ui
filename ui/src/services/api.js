@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api`,
   headers: {
     'Content-Type': 'application/json'
   }
@@ -25,8 +25,8 @@ export const opencodeApi = {
     return response.data
   },
 
-  async deleteSession(sessionId) {
-    const response = await api.delete(`/sessions/${sessionId}`)
+  async getSessionMessages(sessionId) {
+    const response = await api.get(`/sessions/${sessionId}/messages`)
     return response.data
   },
 
@@ -35,8 +35,10 @@ export const opencodeApi = {
     const { provider_id = 'github-copilot', model_id = 'gpt-5-mini' } = options
     const response = await api.post(`/sessions/${sessionId}/chat`, { 
       prompt,
-      provider_id,
-      model_id
+      model: {
+        providerID: provider_id,
+        modelID: model_id
+      }
     })
     return response.data
   },
@@ -48,7 +50,8 @@ export const opencodeApi = {
   },
 
   async streamMessage(sessionId, prompt, onChunk) {
-    const response = await fetch(`/api/sessions/${sessionId}/chat/stream`, {
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+    const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/chat/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

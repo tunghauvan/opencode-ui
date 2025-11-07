@@ -8,6 +8,7 @@ from typing import Optional, List
 import uvicorn
 
 from app.core.opencode_client import opencode_service
+from app.core.config import settings
 
 app = FastAPI(title="OpenCode UI API", version="1.0.0")
 
@@ -21,13 +22,16 @@ app.add_middleware(
 )
 
 # Pydantic models
+class Model(BaseModel):
+    providerID: str
+    modelID: str
+
 class CreateSessionRequest(BaseModel):
     title: Optional[str] = None
 
 class ChatRequest(BaseModel):
     prompt: str
-    provider_id: Optional[str] = "github-copilot"
-    model_id: Optional[str] = "gpt-5-mini"
+    model: Model
 
 class SessionResponse(BaseModel):
     id: str
@@ -105,23 +109,34 @@ async def chat(session_id: str, request: ChatRequest):
         response = opencode_service.send_prompt(
             session_id, 
             request.prompt,
-            provider_id=request.provider_id,
-            model_id=request.model_id
+            model=request.model
         )
-        # Handle different response formats
-        if hasattr(response, 'content'):
-            content = response.content
-        elif hasattr(response, 'message'):
-            content = response.message
-        elif isinstance(response, dict):
-            content = response.get('content', response.get('message', str(response)))
-        else:
-            # Handle AssistantMessage object with parts
-            content = ""
-            if hasattr(response, 'parts') and response.parts:
-                for part in response.parts:
+        
+        # Extract text content from OpenCode API response
+        content = ""
+        if isinstance(response, dict):
+            # Handle OpenCode API response format with 'parts'
+            if 'parts' in response and isinstance(response['parts'], list):
+                for part in response['parts']:
                     if isinstance(part, dict) and part.get('type') == 'text' and 'text' in part:
                         content += part['text']
+            # Fallback to other possible fields
+            elif 'content' in response:
+                content = response['content']
+            elif 'message' in response:
+                content = response['message']
+            else:
+                content = str(response)
+        else:
+            # Handle object responses
+            if hasattr(response, 'parts') and response.parts:
+                for part in response.parts:
+                    if hasattr(part, 'type') and part.type == 'text' and hasattr(part, 'text'):
+                        content += part.text
+            elif hasattr(response, 'content'):
+                content = response.content
+            elif hasattr(response, 'message'):
+                content = response.message
             else:
                 content = str(response)
         
@@ -132,18 +147,78 @@ async def chat(session_id: str, request: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send message: {str(e)}")
 
-@app.get("/api/models")
-async def get_models():
-    """Get available providers and models"""
+@app.get("/api/sessions/{session_id}/messages")
+async def get_session_messages(session_id: str):
+    """Get all messages from a session"""
     try:
-        return opencode_service.get_providers_and_models()
+        messages = opencode_service.get_messages(session_id)
+        
+        # Return raw messages with full details
+        return messages
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get models: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get messages: {str(e)}")
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+@app.get("/api/models")
+async def get_models():
+    """Get available models from OpenCode API"""
+    try:
+        # Fetch providers from OpenCode API
+        import httpx
+        opencode_url = settings.OPENCODE_BASE_URL
+        response = httpx.get(f"{opencode_url}/config/providers", timeout=30.0)
+        response.raise_for_status()
+        providers_data = response.json()
+        
+        # Transform to frontend format
+        transformed_providers = []
+        for provider in providers_data.get("providers", []):
+            models_dict = {}
+            for model_id, model_info in provider.get("models", {}).items():
+                models_dict[model_id] = {
+                    "id": model_id,
+                    "name": model_info.get("name", model_id)
+                }
+            
+            transformed_providers.append({
+                "id": provider["id"],
+                "name": provider["name"],
+                "models": models_dict
+            })
+        
+        return {
+            "providers": transformed_providers,
+            "default": providers_data.get("default", {})
+        }
+    except Exception as e:
+        # Fallback to hardcoded models if OpenCode API fails
+        return {
+            "providers": [
+                {
+                    "id": "github-copilot",
+                    "name": "GitHub Copilot",
+                    "models": [
+                        {"id": "gpt-5-mini", "name": "GPT-5 Mini"},
+                        {"id": "gpt-5", "name": "GPT-5"}
+                    ]
+                },
+                {
+                    "id": "opencode",
+                    "name": "OpenCode",
+                    "models": [
+                        {"id": "big-pickle", "name": "Big Pickle"}
+                    ]
+                }
+            ],
+            "default": {
+                "github-copilot": "gpt-5-mini",
+                "opencode": "big-pickle"
+            }
+        }
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -66,8 +66,12 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  function selectSession(sessionId) {
+  async function selectSession(sessionId) {
     currentSessionId.value = sessionId
+    
+    // Load messages for the selected session
+    const chatStore = useChatStore()
+    await chatStore.loadMessages(sessionId)
   }
 
   return {
