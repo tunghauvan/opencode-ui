@@ -69,13 +69,25 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null
     streaming.value = false
 
+    // Add user message immediately for instant display
+    addMessage(sessionId, {
+      info: {
+        role: 'user',
+        time: { created: Date.now() }
+      },
+      parts: [{
+        type: 'text',
+        text: prompt
+      }]
+    })
+
     try {
       const response = await opencodeApi.sendMessage(sessionId, prompt, {
         provider_id: selectedProvider.value,
         model_id: selectedModel.value
       })
 
-      // Reload messages from API to get the latest data
+      // Reload messages from API to get the complete response with all details
       await loadMessages(sessionId)
     } catch (e) {
       error.value = 'Failed to send message'
@@ -94,12 +106,38 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null
     streaming.value = true
 
+    // Add user message immediately for instant display
+    addMessage(sessionId, {
+      info: {
+        role: 'user',
+        time: { created: Date.now() }
+      },
+      parts: [{
+        type: 'text',
+        text: prompt
+      }]
+    })
+
+    // Add empty assistant message that will be updated during streaming
+    addMessage(sessionId, {
+      info: {
+        role: 'assistant',
+        time: { created: Date.now() }
+      },
+      parts: [{
+        type: 'text',
+        text: ''
+      }]
+    })
+
     try {
       await opencodeApi.streamMessage(sessionId, prompt, (chunk) => {
         if (chunk.content) {
           const messages = messagesBySession.value[sessionId]
           const lastMsg = messages[messages.length - 1]
-          lastMsg.content += chunk.content
+          if (lastMsg.parts && lastMsg.parts.length > 0) {
+            lastMsg.parts[0].text += chunk.content
+          }
         }
       })
 
