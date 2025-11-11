@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 # SQLite database URL
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/db.sqlite3")
 
 # Create engine with appropriate settings for SQLite
 if DATABASE_URL.startswith("sqlite"):
@@ -22,7 +22,7 @@ else:
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Import Base from models
-from app.core.models import Base  # noqa: E402
+from core.models import Base  # noqa: E402
 
 
 def init_db():

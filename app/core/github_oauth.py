@@ -10,8 +10,8 @@ from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 from urllib.parse import urlencode
 
-from app.core.models import User
-from app.core.config import settings
+from core.models import User
+from core.config import settings
 
 
 class GitHubOAuthService:
@@ -21,11 +21,12 @@ class GitHubOAuthService:
     API_URL = "https://api.github.com"
 
     def __init__(self):
+        self.copilot_client_id = os.getenv("GITHUB_COPILOT_CLIENT_ID", "Iv1.b507a08c87ecfe98")
         self.client_id = os.getenv("GITHUB_CLIENT_ID")
         self.client_secret = os.getenv("GITHUB_CLIENT_SECRET")
         self.callback_url = os.getenv("GITHUB_CALLBACK_URL")
         
-        if not all([self.client_id, self.client_secret, self.callback_url]):
+        if not all([self.copilot_client_id, self.client_secret, self.callback_url]) or not self.client_id:
             raise ValueError("Missing GitHub OAuth configuration in environment variables")
 
     def get_authorization_url(self, state: str) -> str:
@@ -33,7 +34,7 @@ class GitHubOAuthService:
         # For GitHub Apps, we don't specify scopes in the URL
         # Permissions are set at the app level in GitHub settings
         params = {
-            "client_id": self.client_id,
+            "client_id": self.copilot_client_id,
             "redirect_uri": self.callback_url,
             "state": state,
             "allow_signup": "true"
@@ -46,7 +47,7 @@ class GitHubOAuthService:
             response = await client.post(
                 f"{self.BASE_URL}/login/device/code",
                 data={
-                    "client_id": self.client_id,
+                    "client_id": self.copilot_client_id,
                     "scope": "read:user repo gist"  # Add back scopes for device flow
                 },
                 headers={"Accept": "application/json"},
@@ -71,7 +72,7 @@ class GitHubOAuthService:
                 response = await client.post(
                     f"{self.BASE_URL}/login/oauth/access_token",
                     data={
-                        "client_id": self.client_id,
+                        "client_id": self.copilot_client_id,
                         "device_code": device_code,
                         "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
                     },
@@ -102,7 +103,7 @@ class GitHubOAuthService:
             response = await client.post(
                 f"{self.BASE_URL}/login/oauth/access_token",
                 data={
-                    "client_id": self.client_id,
+                    "client_id": self.copilot_client_id,
                     "client_secret": self.client_secret,
                     "code": code,
                     "redirect_uri": self.callback_url,
@@ -285,7 +286,7 @@ class GitHubOAuthService:
             response = await client.post(
                 f"{self.BASE_URL}/login/oauth/access_token",
                 data={
-                    "client_id": self.client_id,
+                    "client_id": self.copilot_client_id,
                     "client_secret": self.client_secret,
                     "grant_type": "refresh_token",
                     "refresh_token": user.refresh_token,
@@ -299,8 +300,117 @@ class GitHubOAuthService:
             if "error" in token_response:
                 raise Exception(f"Token refresh error: {token_response.get('error_description')}")
 
-            return token_response
+    def get_main_authorization_url(self, state: str) -> str:
+        """Generate GitHub authorization URL for main app login"""
+        params = {
+            "client_id": self.client_id,
+            "redirect_uri": self.callback_url,
+            "state": state,
+            "scope": "read:user user:email",
+            "allow_signup": "true"
+        }
+        return f"{self.BASE_URL}/login/oauth/authorize?{urlencode(params)}"
+
+    async def exchange_main_code_for_token(self, code: str) -> Dict[str, Any]:
+        """Exchange authorization code for access token for main app"""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.BASE_URL}/login/oauth/access_token",
+                data={
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                    "code": code,
+                    "redirect_uri": self.callback_url,
+                },
+                headers={"Accept": "application/json"},
+                timeout=30.0
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def authenticate_main_user(self, code: str, db: Session) -> Dict[str, Any]:
+        """Complete main app OAuth flow and save user to database"""
+        try:
+            # Exchange code for token
+            token_response = await self.exchange_main_code_for_token(code)
+            
+            if "error" in token_response:
+                raise Exception(f"GitHub OAuth error: {token_response.get('error_description')}")
+
+            access_token = token_response.get("access_token")
+            refresh_token = token_response.get("refresh_token")
+            token_type = token_response.get("token_type")
+            expires_in = token_response.get("expires_in")
+
+            # Fetch user info
+            user_info = await self.get_user_info(access_token)
+            
+            # Try to get email
+            user_email = None
+            try:
+                user_email = await self.get_user_email(access_token)
+            except Exception as email_error:
+                # Use email from user info as fallback
+                user_email = user_info.get("email")
+
+            # Calculate token expiration
+            token_expires_at = None
+            if expires_in:
+                token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+
+            # Find or create user in database
+            user_id = str(user_info.get("id"))
+            user = db.query(User).filter(User.github_id == user_id).first()
+
+            if user:
+                # Update existing user
+                user.access_token = access_token
+                user.refresh_token = refresh_token or user.refresh_token
+                user.token_expires_at = token_expires_at
+                user.last_login = datetime.utcnow()
+            else:
+                # Create new user
+                user = User(
+                    id=user_id,
+                    github_login=user_info.get("login"),
+                    github_id=user_id,
+                    email=user_email or user_info.get("email"),
+                    avatar_url=user_info.get("avatar_url"),
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    token_expires_at=token_expires_at,
+                    last_login=datetime.utcnow(),
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                db.add(user)
+
+            db.commit()
+            db.refresh(user)
+
+            return {
+                "user": user,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": token_type,
+                "expires_in": expires_in,
+                "token_expires_at": token_expires_at.isoformat() if token_expires_at else None
+            }
+
+        except Exception as e:
+            db.rollback()
+            raise
 
 
-# Global instance
-github_oauth_service = GitHubOAuthService()
+# Lazy initialization of global instance
+_github_oauth_service = None
+
+def get_github_oauth_service():
+    """Get or create the global GitHub OAuth service instance"""
+    global _github_oauth_service
+    if _github_oauth_service is None:
+        _github_oauth_service = GitHubOAuthService()
+    return _github_oauth_service
+
+# For backward compatibility
+github_oauth_service = None

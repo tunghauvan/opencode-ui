@@ -4,15 +4,13 @@ const api = axios.create({
   baseURL: `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api`,
   headers: {
     'Content-Type': 'application/json'
-  }
+  },
+  withCredentials: true
 })
 
 // Add user_id to requests if available
 api.interceptors.request.use((config) => {
-  const userId = localStorage.getItem('user_id')
-  if (userId) {
-    config.headers['X-User-ID'] = userId
-  }
+  // Cookies will be sent automatically with withCredentials: true
   return config
 })
 
@@ -65,6 +63,7 @@ export const opencodeApi = {
       headers: {
         'Content-Type': 'application/json'
       },
+      credentials: 'include',
       body: JSON.stringify({ prompt })
     })
 

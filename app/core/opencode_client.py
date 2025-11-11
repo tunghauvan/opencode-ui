@@ -3,7 +3,7 @@ import opencode_ai
 import os
 import httpx
 
-from app.core.config import settings
+from core.config import settings
 
 class Model:
     def __init__(self, providerID: str, modelID: str):

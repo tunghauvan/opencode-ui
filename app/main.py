@@ -12,12 +12,12 @@ import os
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from app.core.opencode_client import opencode_service
-from app.core.config import settings
-from app.core.database import engine, get_db, init_db
-from app.core.models import User, Base
-from app.core.github_oauth import github_oauth_service
-from app.core.schemas import (
+from core.opencode_client import opencode_service
+from core.config import settings
+from core.database import engine, get_db, init_db
+from core.models import User, Base
+from core.github_oauth import get_github_oauth_service
+from core.schemas import (
     LoginResponse, 
     AuthorizationUrlResponse, 
     GitHubUserResponse,
@@ -27,7 +27,7 @@ from app.core.schemas import (
 # Authentication dependency
 async def get_current_user_dependency(request: Request, db: Session = Depends(get_db)):
     """Dependency to get current authenticated user"""
-    user_id = request.headers.get('X-User-ID')
+    user_id = request.cookies.get('user_id')
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
     
@@ -45,7 +45,7 @@ app = FastAPI(title="OpenCode UI API", version="1.0.0")
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend URL
+    allow_origins=["http://localhost:3000"],  # Specific origin for credentials
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -258,7 +258,7 @@ async def get_login_url():
         state = secrets.token_urlsafe(32)
         # Store state in a simple in-memory dict (in production, use Redis or database)
         # For now, we'll just return it and validate it later
-        authorization_url = github_oauth_service.get_authorization_url(state)
+        authorization_url = get_github_oauth_service().get_main_authorization_url(state)
         
         return {
             "authorization_url": authorization_url,
@@ -272,7 +272,7 @@ async def get_login_url():
 async def get_device_code():
     """Get GitHub OAuth device code for authentication"""
     try:
-        device_code_data = await github_oauth_service.get_device_code()
+        device_code_data = await get_github_oauth_service().get_device_code()
         
         return {
             "device_code": device_code_data.get("device_code"),
@@ -286,32 +286,59 @@ async def get_device_code():
 
 
 @app.post("/auth/device/poll")
-async def poll_device_token(request: Dict[str, Any], db: Session = Depends(get_db)):
+async def poll_device_token(request: Request, db: Session = Depends(get_db)):
     """Poll for device code token completion"""
     try:
-        device_code = request.get("device_code")
+        request_data = await request.json()
+        device_code = request_data.get("device_code")
         if not device_code:
             raise HTTPException(status_code=400, detail="Missing device_code")
         
-        expires_in = request.get("expires_in", 900)  # Default to 15 minutes
+        expires_in = request_data.get("expires_in", 900)  # Default to 15 minutes
+        agent_name = request_data.get("agent_name", "").strip()
+        agent_description = request_data.get("agent_description", "").strip()
+        
+        if not agent_name:
+            raise HTTPException(status_code=400, detail="Agent name is required")
+        
+        # Get user from cookie
+        user_id = request.cookies.get('user_id')
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User authentication required")
+        
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
         
         # Poll for token (this will block until token is available or error occurs)
-        token_response = await github_oauth_service.poll_for_token(device_code, expires_in=expires_in)
+        token_response = await get_github_oauth_service().poll_for_token(device_code, expires_in=expires_in)
         
         if "error" in token_response:
             raise HTTPException(status_code=400, detail=f"Authorization failed: {token_response.get('error_description')}")
         
-        # Exchange the token for user authentication (reuse existing logic)
-        # Token will be stored in database, not returned to frontend
-        auth_result = await github_oauth_service.authenticate_user(token_response.get("access_token"), db, is_token=True)
+        # Create agent instead of authenticating user
+        from core.models import Agent
+        agent = Agent(
+            name=agent_name,
+            description=agent_description,
+            access_token=token_response.get("access_token"),
+            refresh_token=token_response.get("refresh_token"),
+            client_id=get_github_oauth_service().copilot_client_id,  # Required field
+            user_id=user.id,
+            created_at=datetime.utcnow()
+        )
+        
+        db.add(agent)
+        db.commit()
+        db.refresh(agent)
         
         return {
             "status": "success",
-            "user": {
-                "id": auth_result["user"].id,
-                "login": auth_result["user"].github_login,
-                "email": auth_result["user"].email,
-                "avatar_url": auth_result["user"].avatar_url
+            "agent": {
+                "id": agent.id,
+                "name": agent.name,
+                "description": agent.description,
+                "created_at": agent.created_at.isoformat()
             }
         }
         
@@ -326,8 +353,8 @@ async def oauth_callback(code: str = None, state: str = None, db: Session = Depe
         if not code:
             raise HTTPException(status_code=400, detail="Missing authorization code")
 
-        # Authenticate user and get tokens
-        auth_result = await github_oauth_service.authenticate_user(code, db)
+        # Authenticate user using main login flow
+        auth_result = await get_github_oauth_service().authenticate_main_user(code, db)
         
         # Get frontend home URL
         home_url = os.getenv("GITHUB_HOME_URL", "http://localhost:3000")
@@ -336,7 +363,7 @@ async def oauth_callback(code: str = None, state: str = None, db: Session = Depe
         user_data = auth_result["user"]
         
         response = RedirectResponse(
-            url=f"{home_url}?token={auth_result['access_token']}&refresh_token={auth_result.get('refresh_token', '')}&user_id={user_data.id}",
+            url=f"{home_url}?token={auth_result['access_token']}&refresh_token={auth_result.get('refresh_token', '')}",
             status_code=302
         )
         
@@ -360,6 +387,16 @@ async def oauth_callback(code: str = None, state: str = None, db: Session = Depe
                 max_age=604800  # 7 days
             )
         
+        # Set user_id cookie for API authentication
+        response.set_cookie(
+            key="user_id",
+            value=str(user_data.id),
+            httponly=False,  # Set to True in production
+            secure=False,    # Set to True in production (HTTPS only)
+            samesite="lax",
+            max_age=3600
+        )
+        
         return response
 
     except Exception as e:
@@ -371,13 +408,30 @@ async def oauth_callback(code: str = None, state: str = None, db: Session = Depe
 
 
 @app.get("/auth/me", response_model=GitHubUserResponse)
-async def get_current_user(current_user: User = Depends(get_current_user_dependency)):
+async def get_current_user(request: Request, db: Session = Depends(get_db)):
     """Get current authenticated user"""
+    # Skip authentication for OPTIONS requests (CORS preflight)
+    if request.method == "OPTIONS":
+        # Return a dummy response for preflight - this won't be used
+        return {}
+    
+    user_id = request.cookies.get('user_id')
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
     return {
-        "id": current_user.id,
-        "login": current_user.github_login,
-        "email": current_user.email,
-        "avatar_url": current_user.avatar_url
+        "id": user.id,  # This is the GitHub user ID
+        "github_login": user.github_login,
+        "github_id": user.github_id or user.id,  # Fallback to id if github_id is not set
+        "email": user.email,
+        "avatar_url": user.avatar_url,
+        "created_at": user.created_at,
+        "last_login": user.last_login,
+        "is_active": user.is_active
     }
 
 
@@ -389,7 +443,7 @@ async def refresh_token(user_id: str, db: Session = Depends(get_db)):
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        token_response = await github_oauth_service.refresh_access_token(user)
+        token_response = await get_github_oauth_service().refresh_access_token(user)
         
         # Update user in database
         user.access_token = token_response.get("access_token")
@@ -415,7 +469,137 @@ async def logout():
     response = JSONResponse({"message": "Logged out successfully"})
     response.delete_cookie("access_token")
     response.delete_cookie("refresh_token")
+    response.delete_cookie("user_id")
     return response
+
+# Agent Management Routes
+@app.get("/api/agents")
+async def list_agents(current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
+    """List all agents for the current user"""
+    try:
+        from core.models import Agent
+        agents = db.query(Agent).filter(Agent.user_id == current_user.id).all()
+        
+        return [
+            {
+                "id": agent.id,
+                "name": agent.name,
+                "description": agent.description,
+                "created_at": agent.created_at.isoformat() if agent.created_at else None,
+                "last_used": agent.last_used.isoformat() if agent.last_used else None
+            }
+            for agent in agents
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list agents: {str(e)}")
+
+@app.post("/api/agents")
+async def create_agent(request: Dict[str, Any], current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
+    """Create a new agent using redirect OAuth flow"""
+    try:
+        agent_name = request.get("name", "").strip()
+        agent_description = request.get("description", "").strip()
+        
+        if not agent_name:
+            raise HTTPException(status_code=400, detail="Agent name is required")
+        
+        # Generate state for OAuth
+        state = secrets.token_urlsafe(32)
+        
+        # Store agent creation data in state (in production, use Redis/database)
+        # For now, we'll store in a simple dict
+        agent_creation_data = {
+            "user_id": current_user.id,
+            "agent_name": agent_name,
+            "agent_description": agent_description,
+            "state": state
+        }
+        
+        # In a real app, store this in Redis or database with TTL
+        # For demo, we'll use a global dict (not thread-safe)
+        if not hasattr(create_agent, 'pending_agents'):
+            create_agent.pending_agents = {}
+        create_agent.pending_agents[state] = agent_creation_data
+        
+        # Get authorization URL for agent
+        authorization_url = get_github_oauth_service().get_authorization_url(state)
+        
+        return {
+            "authorization_url": authorization_url,
+            "state": state
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create agent: {str(e)}")
+
+@app.delete("/api/agents/{agent_id}")
+async def delete_agent(agent_id: str, current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
+    """Delete an agent"""
+    try:
+        from core.models import Agent
+        agent = db.query(Agent).filter(Agent.id == agent_id, Agent.user_id == current_user.id).first()
+        
+        if not agent:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        
+        db.delete(agent)
+        db.commit()
+        
+        return {"message": "Agent deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete agent: {str(e)}")
+
+@app.get("/auth/agent/callback")
+async def agent_oauth_callback(code: str = None, state: str = None, db: Session = Depends(get_db)):
+    """GitHub OAuth callback handler for agent creation"""
+    try:
+        if not code or not state:
+            raise HTTPException(status_code=400, detail="Missing authorization code or state")
+
+        # Get agent creation data from state (in production, get from Redis/database)
+        if not hasattr(create_agent, 'pending_agents') or state not in create_agent.pending_agents:
+            raise HTTPException(status_code=400, detail="Invalid or expired state")
+        
+        agent_data = create_agent.pending_agents[state]
+        del create_agent.pending_agents[state]  # Clean up
+        
+        # Verify user exists
+        user = db.query(User).filter(User.id == agent_data["user_id"]).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Authenticate agent (this will get the token)
+        auth_result = await get_github_oauth_service().authenticate_user(code, db, is_token=False)
+        
+        # Create agent
+        from core.models import Agent
+        agent = Agent(
+            name=agent_data["agent_name"],
+            description=agent_data["agent_description"],
+            access_token=auth_result.get("access_token"),
+            refresh_token=auth_result.get("refresh_token"),
+            user_id=user.id,
+            created_at=datetime.utcnow()
+        )
+        
+        db.add(agent)
+        db.commit()
+        db.refresh(agent)
+        
+        # Get frontend home URL
+        home_url = os.getenv("GITHUB_HOME_URL", "http://localhost:3000")
+        
+        # Redirect back to agent auth page with success
+        return RedirectResponse(
+            url=f"{home_url}/agent-auth?success=true&agent_id={agent.id}&agent_name={agent.name}",
+            status_code=302
+        )
+
+    except Exception as e:
+        home_url = os.getenv("GITHUB_HOME_URL", "http://localhost:3000")
+        return RedirectResponse(
+            url=f"{home_url}/agent-auth?error={str(e)}",
+            status_code=302
+        )
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
