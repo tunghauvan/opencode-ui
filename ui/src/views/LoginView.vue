@@ -57,7 +57,7 @@ onMounted(async () => {
     // Not logged in, continue
   }
 
-  // Check if returning from OAuth callback
+  // Check if returning from OAuth callback (no longer need token in URL)
   const params = new URLSearchParams(window.location.search)
   const error = params.get('error')
 
@@ -66,15 +66,9 @@ onMounted(async () => {
     return
   }
 
-  // If we have any callback params, assume login was successful and cookies are set
-  const callbackToken = params.get('token')
-  if (callbackToken) {
-    // Clean up URL
+  // Clean up any URL parameters after OAuth callback
+  if (window.location.search) {
     window.history.replaceState({}, document.title, '/login')
-
-    // Redirect to chat
-    router.push('/')
-    return
   }
 })
 

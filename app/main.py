@@ -359,11 +359,11 @@ async def oauth_callback(code: str = None, state: str = None, db: Session = Depe
         # Get frontend home URL
         home_url = os.getenv("GITHUB_HOME_URL", "http://localhost:3000")
         
-        # Create response with tokens in secure cookies and URL
+        # Create response with tokens in secure cookies only (no URL tokens for security)
         user_data = auth_result["user"]
         
         response = RedirectResponse(
-            url=f"{home_url}?token={auth_result['access_token']}&refresh_token={auth_result.get('refresh_token', '')}",
+            url=home_url,  # Redirect to home page without tokens in URL
             status_code=302
         )
         
