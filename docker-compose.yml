@@ -20,9 +20,14 @@ services:
     volumes:
       - ./app:/app/app
       - ./requirements.txt:/app/requirements.txt
+      - ./.env:/app/.env
+      - ./data:/app/data
     environment:
+      - DATABASE_URL=sqlite:///./data/db.sqlite3
       - OPENCODE_BASE_URL=http://opencode-agent:4096
       - USE_MOCK=false
+    env_file:
+      - .env
     networks:
       - opencode-network
 

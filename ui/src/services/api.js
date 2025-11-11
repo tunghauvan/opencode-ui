@@ -7,6 +7,15 @@ const api = axios.create({
   }
 })
 
+// Add user_id to requests if available
+api.interceptors.request.use((config) => {
+  const userId = localStorage.getItem('user_id')
+  if (userId) {
+    config.headers['X-User-ID'] = userId
+  }
+  return config
+})
+
 // API service for OpenCode
 export const opencodeApi = {
   // Session management
