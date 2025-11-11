@@ -12,14 +12,6 @@
       <div class="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
         <h1 class="text-xl font-semibold text-gray-800">OpenCode UI</h1>
         <div class="flex items-center gap-4">
-          <button
-            @click="goToAgentAuth"
-            class="text-gray-600 hover:text-gray-800 px-3 py-2 rounded-md text-sm font-medium transition-colors"
-            title="Create AI Agent"
-          >
-            🤖 Agents
-          </button>
-
           <!-- User Profile Dropdown -->
           <div class="relative">
             <button
@@ -93,14 +85,12 @@
     <SettingsDialog
       :is-open="showSettingsDialog"
       @close="closeSettings"
-      @create-agent="goToAgentAuth"
     />
   </div>
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { useSessionStore } from '../stores/session'
 import { useUserStore } from '../stores/user'
 import SessionSidebar from '../components/SessionSidebar.vue'
@@ -110,7 +100,6 @@ import SettingsDialog from '../components/SettingsDialog.vue'
 
 const sessionStore = useSessionStore()
 const userStore = useUserStore()
-const router = useRouter()
 
 // Dropdown state
 const showDropdown = ref(false)
@@ -133,11 +122,6 @@ async function handleNewSession() {
     console.error('Error creating session:', error)
     alert('Failed to create new session: ' + (error.message || 'Unknown error'))
   }
-}
-
-function goToAgentAuth() {
-  showDropdown.value = false
-  router.push('/agent-auth')
 }
 
 function openSettings() {

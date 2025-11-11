@@ -151,6 +151,109 @@
             </div>
           </div>
         </div>
+
+        <!-- Agent Creation Modal -->
+        <div v-if="showAgentModal" class="agent-modal-overlay" @click="closeAgentModal">
+          <div class="agent-modal-content" @click.stop>
+            <div class="agent-modal-header">
+              <h3>Create New Agent</h3>
+              <button @click="closeAgentModal" class="close-button">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+
+            <div class="agent-modal-body">
+              <!-- Agent Info Section -->
+              <div class="agent-info-section">
+                <div class="agent-details">
+                  <div class="agent-form">
+                    <div class="form-group">
+                      <label for="agent-name">Agent Name:</label>
+                      <input
+                        id="agent-name"
+                        v-model="agentName"
+                        type="text"
+                        placeholder="Enter agent name"
+                        :disabled="isAuthenticating"
+                      />
+                    </div>
+                    <div class="form-group">
+                      <label for="agent-description">Description (optional):</label>
+                      <textarea
+                        id="agent-description"
+                        v-model="agentDescription"
+                        placeholder="Describe what this agent does"
+                        :disabled="isAuthenticating"
+                        rows="3"
+                      ></textarea>
+                    </div>
+                    <div class="action-buttons">
+                      <button
+                        @click="createAgent"
+                        class="create-agent-button"
+                        :disabled="!agentName.trim() || isAuthenticating"
+                      >
+                        {{ isAuthenticating ? 'Creating Agent...' : 'Create Agent' }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Device Code Flow -->
+              <div v-if="deviceCode" class="device-auth-section">
+                <div v-if="!isAuthenticated" class="device-code-section">
+                  <h4>Device Authentication</h4>
+                  <p class="instruction-text">
+                    Copy this code and paste it on the GitHub authorization page:
+                  </p>
+
+                  <div class="code-display">
+                    <code>{{ deviceCode.user_code }}</code>
+                    <button @click="copyCode" class="copy-button" :disabled="copied">
+                      {{ copied ? 'Copied!' : 'Copy' }}
+                    </button>
+                  </div>
+
+                  <div class="link-section">
+                    <p>Then visit this link to enter the code:</p>
+                    <a :href="deviceCode.verification_uri" target="_blank" class="github-link">
+                      {{ deviceCode.verification_uri }}
+                    </a>
+                  </div>
+
+                  <div v-if="pollingStarted" class="polling-status">
+                    <div class="spinner small"></div>
+                    <p>Waiting for authorization... ({{ pollingTimeLeft }}s)</p>
+                  </div>
+
+                  <div class="action-buttons">
+                    <button @click="cancelAuth" class="cancel-button">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+
+                <div v-else class="success-section">
+                  <div class="success-icon">✓</div>
+                  <p>Agent authentication successful!</p>
+                  <p class="agent-info">Agent "{{ agentName }}" has been created and authenticated.</p>
+                  <div class="success-actions">
+                    <button @click="createAnotherAgent" class="create-another-button">
+                      Create Another Agent
+                    </button>
+                    <button @click="closeAgentModal" class="back-home-button">
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </Teleport>
@@ -188,6 +291,20 @@ const language = ref('en')
 // Delete modal
 const showDeleteModal = ref(false)
 const agentToDelete = ref(null)
+
+// Agent modal
+const showAgentModal = ref(false)
+
+// Agent auth data
+const agentName = ref('')
+const agentDescription = ref('')
+const deviceCode = ref(null)
+const isAuthenticated = ref(false)
+const isAuthenticating = ref(false)
+const pollingController = ref(null)
+const pollingTimeLeft = ref(0)
+const copied = ref(false)
+const pollingStarted = ref(false)
 
 const router = useRouter()
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -246,8 +363,7 @@ const savePreferences = () => {
 }
 
 const handleCreateAgent = () => {
-  emit('create-agent')
-  closeModal()
+  showAgentModal.value = true
 }
 
 const editAgent = (agent) => {
@@ -288,6 +404,17 @@ const cancelDelete = () => {
   agentToDelete.value = null
 }
 
+const closeAgentModal = () => {
+  showAgentModal.value = false
+  // Reset form state
+  agentName.value = ''
+  agentDescription.value = ''
+  deviceCode.value = null
+  isAuthenticated.value = false
+  isAuthenticating.value = false
+  pollingStarted.value = false
+}
+
 const closeModal = () => {
   emit('close')
 }
@@ -296,6 +423,139 @@ const formatDate = (dateString) => {
   if (!dateString) return 'Never'
   const date = new Date(dateString)
   return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+// Agent auth functions
+const createAgent = async () => {
+  if (!agentName.value.trim()) {
+    alert('Please enter an agent name')
+    return
+  }
+
+  isAuthenticating.value = true
+
+  try {
+    const response = await fetch(`${API_URL}/auth/device`, {
+      credentials: 'include'
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to get device code: ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    deviceCode.value = data
+
+    // Start polling immediately
+    startPolling(deviceCode.value.device_code, deviceCode.value.interval || 5, deviceCode.value.expires_in || 900)
+
+  } catch (error) {
+    console.error('Create agent error:', error)
+    isAuthenticating.value = false
+    alert('Failed to create agent: ' + error.message)
+  }
+}
+
+const startPolling = async (deviceCodeValue, interval, expiresIn) => {
+  try {
+    pollingController.value = new AbortController()
+
+    pollingStarted.value = true
+    pollingTimeLeft.value = expiresIn || 900
+
+    const countdownInterval = setInterval(() => {
+      pollingTimeLeft.value = Math.max(0, pollingTimeLeft.value - 1)
+      if (pollingTimeLeft.value <= 0) {
+        clearInterval(countdownInterval)
+        if (pollingController.value) {
+          pollingController.value.abort()
+        }
+      }
+    }, 1000)
+
+    const response = await fetch(`${API_URL}/auth/device/poll`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        device_code: deviceCodeValue,
+        expires_in: expiresIn || 900,
+        agent_name: agentName.value,
+        agent_description: agentDescription.value
+      }),
+      signal: pollingController.value.signal
+    })
+
+    clearInterval(countdownInterval)
+    pollingController.value = null
+    pollingStarted.value = false
+    isAuthenticating.value = false
+
+    if (response.ok) {
+      const data = await response.json()
+      isAuthenticated.value = true
+      // Reload agents list
+      await loadAgents()
+    } else {
+      const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
+      alert(`Authorization failed: ${errorData.detail}`)
+    }
+
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.log('Authentication cancelled or timed out')
+    } else {
+      console.error('Polling error:', error)
+      alert('Polling error: ' + error.message)
+    }
+    pollingController.value = null
+    pollingStarted.value = false
+    isAuthenticating.value = false
+  }
+}
+
+const copyCode = async () => {
+  try {
+    await navigator.clipboard.writeText(deviceCode.value.user_code)
+    copied.value = true
+    setTimeout(() => {
+      copied.value = false
+    }, 2000)
+  } catch (error) {
+    console.error('Copy failed:', error)
+    const textArea = document.createElement('textarea')
+    textArea.value = deviceCode.value.user_code
+    document.body.appendChild(textArea)
+    textArea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textArea)
+    copied.value = true
+    setTimeout(() => {
+      copied.value = false
+    }, 2000)
+  }
+}
+
+const cancelAuth = () => {
+  if (pollingController.value) {
+    pollingController.value.abort()
+    pollingController.value = null
+  }
+  deviceCode.value = null
+  pollingStarted.value = false
+  isAuthenticating.value = false
+}
+
+const createAnotherAgent = () => {
+  agentName.value = ''
+  agentDescription.value = ''
+  deviceCode.value = null
+  isAuthenticated.value = false
+  isAuthenticating.value = false
+  pollingStarted.value = false
+  // Keep modal open for creating another agent
 }
 </script>
 
@@ -648,6 +908,16 @@ const formatDate = (dateString) => {
   100% { transform: rotate(360deg); }
 }
 
+.spinner.small {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid #007bff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0;
+}
+
 /* Delete Modal */
 .delete-modal-overlay {
   position: fixed;
@@ -722,12 +992,325 @@ const formatDate = (dateString) => {
   background: #c82333;
 }
 
+/* Agent Creation Modal */
+.agent-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+}
+
+.agent-modal-content {
+  background: white;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid #e9ecef;
+  background: #f8f9fa;
+}
+
+.agent-modal-header h3 {
+  margin: 0;
+  color: #1a1a1a;
+  font-size: 1.25rem;
+}
+
+.agent-modal-body {
+  padding: 1.5rem 2rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Agent Auth Tab */
+.agent-auth-section h3 {
+  margin: 0 0 1rem;
+  color: #1a1a1a;
+  font-size: 1.25rem;
+}
+
+.agent-info-section {
+  margin-bottom: 2rem;
+}
+
+.agent-details .agent-form {
+  background: #f8f9fa;
+  padding: 1.5rem;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.agent-details .form-group {
+  margin-bottom: 1rem;
+}
+
+.agent-details .form-group:last-child {
+  margin-bottom: 0;
+}
+
+.agent-details .form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #333;
+  font-size: 0.9rem;
+}
+
+.agent-details .form-group input,
+.agent-details .form-group textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: border-color 0.2s;
+}
+
+.agent-details .form-group input:focus,
+.agent-details .form-group textarea:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+}
+
+.agent-details .form-group textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.agent-details .create-agent-button {
+  padding: 0.75rem 2rem;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
+  width: 100%;
+}
+
+.agent-details .create-agent-button:hover:not(:disabled) {
+  background: #218838;
+}
+
+.agent-details .create-agent-button:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+.action-buttons {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.device-auth-section {
+  width: 100%;
+}
+
+.device-code-section h4 {
+  margin: 0 0 0.5rem;
+  color: #1a1a1a;
+  font-size: 1.1rem;
+}
+
+.device-code-section .instruction-text {
+  text-align: center;
+  color: #666;
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.code-display {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #f8f9fa;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 1rem 0;
+  width: 100%;
+  max-width: 300px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.code-display code {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #24292e;
+  letter-spacing: 0.1em;
+  flex: 1;
+  text-align: center;
+}
+
+.code-display .copy-button {
+  padding: 0.5rem 1rem;
+  background: #24292e;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.code-display .copy-button:hover:not(:disabled) {
+  background: #1a1f26;
+}
+
+.code-display .copy-button:disabled {
+  background: #28a745;
+  cursor: default;
+}
+
+.link-section {
+  text-align: center;
+  margin: 1rem 0;
+}
+
+.link-section p {
+  margin: 0 0 0.5rem;
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.github-link {
+  display: inline-block;
+  color: #0366d6;
+  text-decoration: none;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border: 1px solid #0366d6;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.github-link:hover {
+  background: #0366d6;
+  color: white;
+}
+
+.polling-status {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #666;
+  font-size: 0.85rem;
+  margin: 1rem 0;
+  justify-content: center;
+}
+
+.device-code-section .action-buttons {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+  justify-content: center;
+}
+
+.device-code-section .cancel-button {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.2s;
+  background: #dc3545;
+  color: white;
+}
+
+.device-code-section .cancel-button:hover {
+  background: #c82333;
+}
+
+.success-section {
+  color: #28a745;
+  text-align: center;
+}
+
+.success-section .success-icon {
+  font-size: 3rem;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+}
+
+.success-section p {
+  margin: 0 0 0.5rem;
+  font-weight: 500;
+}
+
+.success-section .agent-info {
+  color: #666;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.success-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.create-another-button {
+  padding: 0.75rem 1.5rem;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.create-another-button:hover {
+  background: #5a67d8;
+}
+
+.success-section .back-home-button {
+  padding: 0.75rem 1.5rem;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.success-section .back-home-button:hover {
+  background: #0056b3;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
-  .settings-modal-content {
-    max-width: 95vw;
-    max-height: 95vh;
-  }
 
   .settings-modal-header {
     padding: 1rem 1.5rem;
@@ -770,6 +1353,47 @@ const formatDate = (dateString) => {
   }
 
   .delete-modal-actions {
+    flex-direction: column;
+  }
+
+  /* Agent Modal Responsive */
+  .agent-modal-content {
+    max-width: 95vw;
+    max-height: 95vh;
+  }
+
+  .agent-modal-header {
+    padding: 1rem 1.5rem;
+  }
+
+  .agent-modal-header h3 {
+    font-size: 1.1rem;
+  }
+
+  .agent-modal-body {
+    padding: 1rem 1.5rem;
+  }
+
+  /* Agent Auth Responsive */
+  .agent-details .agent-form {
+    padding: 1rem;
+  }
+
+  .code-display {
+    max-width: 100%;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .code-display code {
+    font-size: 1rem;
+  }
+
+  .device-code-section .action-buttons {
+    flex-direction: column;
+  }
+
+  .success-actions {
     flex-direction: column;
   }
 }

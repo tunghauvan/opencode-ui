@@ -1,20 +1,68 @@
-opencode-python-server/
+opencode-ui/
+├── .github/
+│   └── copilot-instructions.md
 ├── app/
 │   ├── __init__.py
 │   ├── main.py
-│   ├── api/
-│   │   ├── __init__.py
-│   │   ├── sessions.py
-│   │   ├── prompts.py
-│   │   └── events.py
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── config.py
-│   │   └── opencode_client.py
-│   └── models/
+│   ├── __pycache__/
+│   └── core/
 │       ├── __init__.py
-│       └── schemas.py
-├── requirements.txt
+│       ├── config.py
+│       ├── database.py
+│       ├── github_oauth.py
+│       ├── models.py
+│       ├── opencode_client.py
+│       ├── schemas.py
+│       └── __pycache__/
+├── cli_tester.py
+├── cli.py
+├── data/
+│   └── db.sqlite3
+├── docker-compose.yml
+├── Dockerfile
+├── Dockerfile.backend
+├── Dockerfile.frontend
+├── logs/
+│   ├── nginx/
+│   └── squid/
+├── project_structure.txt
+├── pyproject.toml
 ├── README.md
-├── .gitignore
-└── pyproject.toml
+├── requirements.txt
+├── static/
+│   ├── css/
+│   │   └── chat.css
+│   └── js/
+│       └── chat.js
+├── templates/
+│   └── chat.html
+├── ui/
+│   ├── index.html
+│   ├── package.json
+│   ├── postcss.config.js
+│   ├── tailwind.config.js
+│   ├── vite.config.js
+│   └── src/
+│       ├── App.vue
+│       ├── main.js
+│       ├── style.css
+│       ├── components/
+│       │   ├── ChatInput.vue
+│       │   ├── ChatWindow.vue
+│       │   ├── EmptyState.vue
+│       │   ├── MessageBubble.vue
+│       │   ├── ModelSelector.vue
+│       │   ├── ModelSelectorModal.vue
+│       │   ├── SessionItem.vue
+│       │   └── SessionSidebar.vue
+│       ├── router/
+│       │   └── index.js
+│       ├── services/
+│       │   └── api.js
+│       ├── stores/
+│       │   ├── chat.js
+│       │   └── session.js
+│       └── views/
+│           ├── ChatView.vue
+│           └── LoginView.vue
+└── __pycache__/
