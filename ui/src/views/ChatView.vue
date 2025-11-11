@@ -54,7 +54,7 @@
                   <div class="text-xs">{{ userStore.user?.email }}</div>
                 </div>
                 <button
-                  @click="goToSettings"
+                  @click="openSettings"
                   class="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                 >
                   <svg class="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -88,6 +88,13 @@
       class="fixed inset-0 z-40"
       @click="showDropdown = false"
     ></div>
+
+    <!-- Settings Dialog -->
+    <SettingsDialog
+      :is-open="showSettingsDialog"
+      @close="closeSettings"
+      @create-agent="goToAgentAuth"
+    />
   </div>
 </template>
 
@@ -99,6 +106,7 @@ import { useUserStore } from '../stores/user'
 import SessionSidebar from '../components/SessionSidebar.vue'
 import ChatWindow from '../components/ChatWindow.vue'
 import EmptyState from '../components/EmptyState.vue'
+import SettingsDialog from '../components/SettingsDialog.vue'
 
 const sessionStore = useSessionStore()
 const userStore = useUserStore()
@@ -106,6 +114,8 @@ const router = useRouter()
 
 // Dropdown state
 const showDropdown = ref(false)
+// Settings dialog state
+const showSettingsDialog = ref(false)
 
 onMounted(async () => {
   await sessionStore.fetchSessions()
@@ -126,12 +136,17 @@ async function handleNewSession() {
 }
 
 function goToAgentAuth() {
+  showDropdown.value = false
   router.push('/agent-auth')
 }
 
-function goToSettings() {
+function openSettings() {
   showDropdown.value = false
-  router.push('/settings')
+  showSettingsDialog.value = true
+}
+
+function closeSettings() {
+  showSettingsDialog.value = false
 }
 
 function toggleDropdown() {
