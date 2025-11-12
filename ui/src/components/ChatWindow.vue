@@ -1,37 +1,46 @@
 <template>
-  <div class="h-full flex flex-col">
-    <!-- Chat Header -->
-    <div class="bg-white border-b border-gray-200 px-6 py-4">
+  <div class="h-full flex flex-col animate-fade-in">
+    <!-- Chat Header with Gradient -->
+    <div class="glass border-b border-white/20 px-6 py-2.5 backdrop-blur-xl">
       <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold text-gray-900">
-            {{ sessionTitle }}
-          </h1>
-          <p class="text-sm text-gray-500 mt-1">
-            Session ID: {{ sessionStore.currentSessionId?.slice(0, 8) }}
-            <span v-if="messages.length > 0" class="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-              {{ messages.length }} messages
-            </span>
-          </p>
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-purple-600 flex items-center justify-center shadow-lg shadow-primary-500/30">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+            </svg>
+          </div>
+          <div>
+            <h1 class="text-lg font-bold text-gradient">
+              {{ sessionTitle }}
+            </h1>
+            <div class="flex items-center gap-2 mt-0.5">
+              <p class="text-xs text-gray-500">
+                Session: {{ sessionStore.currentSessionId?.slice(0, 8) }}
+              </p>
+              <span v-if="messages.length > 0" class="status-badge status-online">
+                {{ messages.length }} messages
+              </span>
+            </div>
+          </div>
         </div>
         
         <div class="flex items-center gap-2">
           <button
             @click="exportChat"
-            class="btn btn-secondary text-sm"
+            class="btn btn-ghost text-sm group"
             title="Export chat history"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-5 h-5 group-hover:text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </button>
           
           <button
             @click="handleClearChat"
-            class="btn btn-secondary text-sm"
+            class="btn btn-ghost text-sm group"
             title="Clear chat history"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-5 h-5 group-hover:text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
           </button>
@@ -39,56 +48,73 @@
       </div>
     </div>
 
-    <!-- Messages Area -->
-    <div ref="messagesContainer" class="flex-1 overflow-y-auto bg-gray-50 px-6 py-6">
-      <div v-if="messages.length === 0" class="h-full flex items-center justify-center">
-        <div class="text-center text-gray-500">
-          <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-          <p class="text-lg font-medium">Start a conversation</p>
-          <p class="text-sm mt-2">Type a message below to begin chatting</p>
+    <!-- Messages Area with Modern Design -->
+    <div ref="messagesContainer" class="flex-1 overflow-y-auto px-6 py-6 bg-gradient-to-br from-gray-50/50 via-blue-50/30 to-purple-50/30">
+      <div v-if="messages.length === 0" class="h-full flex items-center justify-center animate-fade-in">
+        <div class="text-center">
+          <div class="w-24 h-24 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-primary-500 to-purple-600 flex items-center justify-center shadow-2xl shadow-primary-500/30 animate-pulse-slow">
+            <svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </div>
+          <h3 class="text-2xl font-bold text-gradient mb-3">Start a conversation</h3>
+          <p class="text-gray-500 text-base max-w-md mx-auto">
+            Type a message below to begin chatting with the AI assistant
+          </p>
+          <div class="mt-8 flex justify-center gap-4 flex-wrap">
+            <div class="card px-4 py-3 hover:scale-105 transition-transform cursor-default">
+              <div class="text-sm font-medium text-gray-700">💡 Ask anything</div>
+            </div>
+            <div class="card px-4 py-3 hover:scale-105 transition-transform cursor-default">
+              <div class="text-sm font-medium text-gray-700">🚀 Get code help</div>
+            </div>
+            <div class="card px-4 py-3 hover:scale-105 transition-transform cursor-default">
+              <div class="text-sm font-medium text-gray-700">📝 Learn something</div>
+            </div>
+          </div>
         </div>
       </div>
       
-      <div v-else class="space-y-6 max-w-4xl mx-auto">
+      <div v-else class="space-y-6 max-w-5xl mx-auto animate-slide-up">
         <MessageBubble
           v-for="(message, index) in messages"
           :key="index"
           :message="message"
+          class="animate-fade-in"
+          :style="{ animationDelay: `${index * 0.05}s` }"
         />
         
-        <div v-if="chatStore.loading || chatStore.streaming" class="flex justify-start">
-          <div class="bg-white rounded-2xl px-4 py-3 shadow-sm border border-gray-200">
-            <div class="flex items-center gap-2">
-              <div class="flex gap-1">
-                <div class="w-2 h-2 bg-primary-500 rounded-full animate-bounce" style="animation-delay: 0ms"></div>
-                <div class="w-2 h-2 bg-primary-500 rounded-full animate-bounce" style="animation-delay: 150ms"></div>
-                <div class="w-2 h-2 bg-primary-500 rounded-full animate-bounce" style="animation-delay: 300ms"></div>
+        <div v-if="chatStore.loading || chatStore.streaming" class="flex justify-start animate-fade-in">
+          <div class="message-assistant rounded-3xl px-6 py-4">
+            <div class="flex items-center gap-3">
+              <div class="flex gap-1.5">
+                <div class="w-2.5 h-2.5 bg-primary-500 rounded-full animate-bounce" style="animation-delay: 0ms"></div>
+                <div class="w-2.5 h-2.5 bg-primary-500 rounded-full animate-bounce" style="animation-delay: 150ms"></div>
+                <div class="w-2.5 h-2.5 bg-primary-500 rounded-full animate-bounce" style="animation-delay: 300ms"></div>
               </div>
-              <span class="text-sm text-gray-500">Thinking...</span>
+              <span class="text-sm text-gray-600 font-medium">AI is thinking...</span>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Input Area -->
-    <div class="bg-white border-t border-gray-200 px-6 py-4">
-      <div class="mb-2 text-xs text-gray-400">Debug: ChatInput loaded</div>
+    <!-- Input Area with Modern Design -->
+    <div class="glass border-t border-white/20 px-6 py-3 backdrop-blur-xl">
       <ChatInput
         v-model="inputMessage"
         :disabled="chatStore.loading || chatStore.streaming"
         @send="handleSendMessage"
       />
       
-      <div v-if="chatStore.error" class="mt-2 text-sm text-red-600">
+      <div v-if="chatStore.error" class="mt-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-2 animate-slide-down">
         {{ chatStore.error }}
       </div>
       
       <!-- Current Model Display -->
-      <div class="mt-2 text-xs text-gray-500 text-center">
-        Model: {{ currentModelDisplay }}
+      <div class="mt-2 flex items-center justify-center gap-2 text-xs text-gray-500">
+        <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+        <span>Model: <span class="font-semibold text-gray-700">{{ currentModelDisplay }}</span></span>
       </div>
     </div>
   </div>

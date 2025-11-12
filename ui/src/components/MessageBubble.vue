@@ -1,39 +1,41 @@
 <template>
   <div 
-    class="flex gap-3"
+    class="flex gap-3 animate-slide-up"
     :class="[
       message.info?.role === 'user' ? 'justify-end' : 'justify-start'
     ]"
   >
-    <!-- Avatar -->
+    <!-- Avatar for Assistant -->
     <div 
       v-if="message.info?.role === 'assistant'"
-      class="flex-shrink-0 w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center text-white font-semibold"
+      class="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-primary-600 to-purple-600 flex items-center justify-center text-white font-bold shadow-lg shadow-primary-500/30 ring-2 ring-white"
     >
-      AI
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+      </svg>
     </div>
 
     <!-- Message Content -->
     <div 
-      class="max-w-4xl rounded-2xl px-4 py-3 shadow-sm"
+      class="max-w-4xl rounded-3xl px-5 py-4 transition-all duration-300 hover:shadow-xl"
       :class="[
         message.info?.role === 'user' 
-          ? 'bg-primary-600 text-white' 
+          ? 'message-user' 
           : message.isError
-            ? 'bg-red-50 text-red-900 border border-red-200'
-            : 'bg-white text-gray-900 border border-gray-200'
+            ? 'bg-red-50 text-red-900 border border-red-200 shadow-md'
+            : 'message-assistant'
       ]"
     >
       <!-- Message Header -->
       <div class="flex items-center justify-between mb-3">
-        <div class="flex items-center gap-2">
-          <span class="text-sm font-medium" :class="message.info?.role === 'user' ? 'text-white' : 'text-gray-900'">
+        <div class="flex items-center gap-3">
+          <span class="text-xs font-bold uppercase tracking-wider" :class="message.info?.role === 'user' ? 'text-white/90' : 'text-gray-600'">
             {{ message.info?.role || 'unknown' }}
           </span>
-          <span class="text-xs opacity-70" :class="message.info?.role === 'user' ? 'text-white' : 'text-gray-500'">
+          <span class="text-xs opacity-70" :class="message.info?.role === 'user' ? 'text-white/80' : 'text-gray-500'">
             {{ formattedTime }}
           </span>
-          <span v-if="completionDuration" class="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+          <span v-if="completionDuration" class="status-badge bg-primary-100 text-primary-800">
             {{ completionDuration }}ms
           </span>
         </div>
@@ -42,12 +44,15 @@
         <button 
           v-if="hasTechnicalDetails"
           @click="showDetails = !showDetails"
-          class="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+          class="text-xs px-2.5 py-1 rounded-lg transition-all hover:scale-105"
+          :class="message.info?.role === 'user' ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
         >
-          <svg class="w-4 h-4" :class="{ 'rotate-180': showDetails }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-          Details
+          <div class="flex items-center gap-1">
+            <svg class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-180': showDetails }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+            Details
+          </div>
         </button>
       </div>
 
@@ -58,7 +63,7 @@
         
         <!-- Tool Executions -->
         <div v-if="toolParts.length > 0" class="space-y-2">
-          <h4 class="text-sm font-medium text-gray-700 flex items-center gap-2">
+          <h4 class="text-sm font-bold flex items-center gap-2" :class="message.info?.role === 'user' ? 'text-white/90' : 'text-gray-800'">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -66,31 +71,34 @@
             Tool Executions
           </h4>
           
-          <div v-for="tool in toolParts" :key="tool.id" class="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <div class="flex items-center gap-2 mb-2">
+          <div v-for="tool in toolParts" :key="tool.id" class="card bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-200 p-4 hover:shadow-lg transition-shadow">
+            <div class="flex items-center gap-2 mb-3">
               <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
-              <span class="font-medium text-blue-900">{{ tool.tool }} command</span>
-              <span class="text-xs px-2 py-1 rounded" :class="getStatusClass(tool.state?.status)">
+              <span class="font-bold text-blue-900">{{ tool.tool }} command</span>
+              <span class="status-badge" :class="getStatusClass(tool.state?.status)">
                 {{ tool.state?.status || 'unknown' }}
               </span>
             </div>
             
-            <div v-if="tool.state?.input?.command" class="text-sm text-gray-700 mb-2">
+            <div v-if="tool.state?.input?.command" class="text-sm text-gray-800 mb-2">
               <strong class="text-gray-900">Command:</strong> 
-              <code class="bg-gray-100 px-2 py-1 rounded text-xs">{{ tool.state.input.command }}</code>
+              <code class="bg-white px-2 py-1 rounded-lg text-xs font-mono border border-gray-200">{{ tool.state.input.command }}</code>
             </div>
             
-            <div v-if="tool.state?.input?.description" class="text-sm text-gray-600 mb-2">
+            <div v-if="tool.state?.input?.description" class="text-sm text-gray-700 mb-2">
               {{ tool.state.input.description }}
             </div>
             
-            <div v-if="tool.state?.output" class="bg-gray-900 text-green-400 p-3 rounded font-mono text-sm overflow-x-auto">
+            <div v-if="tool.state?.output" class="bg-gray-900 text-green-400 p-4 rounded-xl font-mono text-sm overflow-x-auto shadow-inner">
               <pre>{{ tool.state.output }}</pre>
             </div>
             
-            <div v-if="tool.state?.time" class="text-xs text-gray-500 mt-2">
+            <div v-if="tool.state?.time" class="text-xs text-gray-600 mt-2 flex items-center gap-1">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
               Duration: {{ toolDuration(tool) }}ms
             </div>
           </div>
@@ -98,30 +106,30 @@
       </div>
 
       <!-- Technical Details (Collapsible) -->
-      <div v-if="showDetails && hasTechnicalDetails" class="mt-4 pt-4 border-t border-gray-200">
-        <h4 class="text-sm font-medium text-gray-700 mb-3">Technical Details</h4>
+      <div v-if="showDetails && hasTechnicalDetails" class="mt-4 pt-4 border-t" :class="message.info?.role === 'user' ? 'border-white/20' : 'border-gray-200'">
+        <h4 class="text-sm font-bold mb-3" :class="message.info?.role === 'user' ? 'text-white/90' : 'text-gray-800'">Technical Details</h4>
         
         <div class="space-y-2">
-          <div class="text-xs text-gray-600">
+          <div class="text-xs" :class="message.info?.role === 'user' ? 'text-white/80' : 'text-gray-600'">
             <strong>Message ID:</strong> {{ message.info?.id }}
           </div>
           
-          <div v-if="message.info?.modelID" class="text-xs text-gray-600">
+          <div v-if="message.info?.modelID" class="text-xs" :class="message.info?.role === 'user' ? 'text-white/80' : 'text-gray-600'">
             <strong>Model:</strong> {{ message.info.providerID }}/{{ message.info.modelID }}
           </div>
           
-          <div v-if="message.info?.tokens" class="text-xs text-gray-600">
+          <div v-if="message.info?.tokens" class="text-xs" :class="message.info?.role === 'user' ? 'text-white/80' : 'text-gray-600'">
             <strong>Tokens:</strong> {{ message.info.tokens.input }} in / {{ message.info.tokens.output }} out
             <span v-if="message.info.tokens.cache"> ({{ message.info.tokens.cache.read }} cached)</span>
           </div>
           
-          <div v-if="message.info?.cost !== undefined" class="text-xs text-gray-600">
+          <div v-if="message.info?.cost !== undefined" class="text-xs" :class="message.info?.role === 'user' ? 'text-white/80' : 'text-gray-600'">
             <strong>Cost:</strong> ${{ message.info.cost }}
           </div>
           
           <!-- All Parts Details -->
           <details class="mt-3">
-            <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
+            <summary class="text-xs cursor-pointer hover:opacity-80" :class="message.info?.role === 'user' ? 'text-white/70' : 'text-gray-500'">
               Show all message parts ({{ message.parts?.length || 0 }})
             </summary>
             
@@ -129,27 +137,27 @@
               <div 
                 v-for="(part, index) in message.parts" 
                 :key="index"
-                class="border-l-2 pl-3 text-xs"
+                class="border-l-2 pl-3 text-xs rounded-r-lg py-2"
                 :class="getPartBorderClass(part.type)"
               >
                 <div class="flex items-center gap-2 mb-1">
                   <span class="font-medium uppercase tracking-wide" :class="getPartTypeClass(part.type)">
                     {{ part.type }}
                   </span>
-                  <span v-if="part.time?.start && part.time?.end" class="text-gray-500">
+                  <span v-if="part.time?.start && part.time?.end" :class="message.info?.role === 'user' ? 'text-white/60' : 'text-gray-500'">
                     {{ partDuration(part) }}ms
                   </span>
                 </div>
                 
-                <div v-if="part.type === 'text' && part.text" class="text-gray-700 bg-gray-50 p-2 rounded text-xs">
+                <div v-if="part.type === 'text' && part.text" class="bg-white/50 p-2 rounded text-xs" :class="message.info?.role === 'user' ? 'text-white' : 'text-gray-700'">
                   {{ part.text }}
                 </div>
                 
-                <div v-else-if="part.type === 'reasoning'" class="text-gray-700 bg-yellow-50 p-2 rounded text-xs">
+                <div v-else-if="part.type === 'reasoning'" class="bg-yellow-50/50 p-2 rounded text-xs" :class="message.info?.role === 'user' ? 'text-white' : 'text-gray-700'">
                   {{ part.text || 'No reasoning content' }}
                 </div>
                 
-                <div v-else class="text-gray-600 bg-gray-50 p-2 rounded text-xs">
+                <div v-else class="bg-white/30 p-2 rounded text-xs" :class="message.info?.role === 'user' ? 'text-white' : 'text-gray-600'">
                   <pre>{{ JSON.stringify(part, null, 2) }}</pre>
                 </div>
               </div>
@@ -159,12 +167,14 @@
       </div>
     </div>
 
-    <!-- Avatar -->
+    <!-- Avatar for User -->
     <div 
       v-if="message.info?.role === 'user'"
-      class="flex-shrink-0 w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-white font-semibold"
+      class="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-white font-bold shadow-lg shadow-gray-500/30 ring-2 ring-white"
     >
-      U
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+      </svg>
     </div>
   </div>
 </template>

@@ -1,35 +1,42 @@
 <template>
   <div
-    class="group px-3 py-2 mx-2 rounded-lg cursor-pointer transition-all"
+    class="group mx-1 rounded-xl cursor-pointer transition-all duration-200 overflow-hidden"
     :class="[
       active 
-        ? 'bg-primary-100 text-primary-900' 
-        : 'hover:bg-gray-100 text-gray-700'
+        ? 'sidebar-item-active shadow-md' 
+        : 'sidebar-item hover:shadow-sm'
     ]"
     @click="$emit('click')"
   >
-    <div class="flex items-center justify-between">
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2">
-          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div class="flex items-center justify-between px-3 py-2">
+      <div class="flex-1 min-w-0 flex items-center gap-3">
+        <div class="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center"
+             :class="active ? 'bg-white/20' : 'bg-primary-100'"
+        >
+          <svg class="w-3 h-3" :class="active ? 'text-white' : 'text-primary-600'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
           </svg>
-          <span class="text-sm font-medium truncate">
-            {{ sessionTitle }}
-          </span>
         </div>
-        <div class="text-xs text-gray-500 mt-1">
-          {{ formattedDate }}
+        <div class="flex-1 min-w-0">
+          <div class="text-xs font-semibold truncate" :class="active ? 'text-white' : 'text-gray-900'">
+            {{ sessionTitle }}
+          </div>
+          <div class="text-xs mt-0 flex items-center gap-1.5" :class="active ? 'text-white/80' : 'text-gray-500'">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {{ formattedDate }}
+          </div>
         </div>
       </div>
       
       <button
-        v-if="active"
         @click.stop="$emit('delete')"
-        class="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition-opacity"
+        class="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg transition-all hover:scale-110"
+        :class="active ? 'hover:bg-white/20 text-white' : 'hover:bg-red-50 text-red-600'"
         title="Delete session"
       >
-        <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
         </svg>
       </button>
