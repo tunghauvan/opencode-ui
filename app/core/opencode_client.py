@@ -13,10 +13,11 @@ class Model:
 class OpenCodeService:
     """Service for interacting with OpenCode API"""
 
-    def __init__(self):
+    def __init__(self, base_url: Optional[str] = None):
         self.use_mock = os.getenv("USE_MOCK", "false").lower() == "true"
+        self.base_url = base_url or settings.OPENCODE_BASE_URL
         if not self.use_mock:
-            self.client = opencode_ai.Opencode(base_url=settings.OPENCODE_BASE_URL)
+            self.client = opencode_ai.Opencode(base_url=self.base_url)
         else:
             self.client = None
 
@@ -41,7 +42,7 @@ class OpenCodeService:
             }
         
         # Use HTTP client directly since OpenCode SDK doesn't support create_session
-        url = f"{settings.OPENCODE_BASE_URL}/session"
+        url = f"{self.base_url}/session"
         body = {}
         if title:
             body["title"] = title
@@ -65,24 +66,24 @@ class OpenCodeService:
             return True
         return self.client.session.delete(session_id)
 
-    def send_prompt(self, session_id: str, prompt: str, model: Model) -> Dict[str, Any]:
+    def send_prompt(self, session_id: str, parts: List[Dict[str, Any]], model: Model) -> Dict[str, Any]:
         """Send a prompt to a session"""
         if self.use_mock:
             return {
-                "content": f"Mock response to: {prompt}",
+                "content": f"Mock response to: {[p.get('text', '') for p in parts if p.get('type') == 'text']}",
                 "session_id": session_id,
                 "info": {"cost": 0.01, "tokens": {"input": 10, "output": 20}}
             }
         
         # Use HTTP client directly to send with model object
-        url = f"{settings.OPENCODE_BASE_URL}/session/{session_id}/message"
+        url = f"{self.base_url}/session/{session_id}/message"
         body = {
             "model": {
                 "providerID": model.providerID,
                 "modelID": model.modelID
             },
             "agent": "build",
-            "parts": [{"type": "text", "text": prompt}]
+            "parts": parts
         }
         print("Sending request body:", body)  # Debug log
         response = httpx.post(url, json=body, timeout=30.0)
@@ -114,10 +115,16 @@ class OpenCodeService:
             ]
         
         # Use HTTP client to get messages
-        url = f"{settings.OPENCODE_BASE_URL}/session/{session_id}/message"
+        url = f"{self.base_url}/session/{session_id}/message"
         response = httpx.get(url, timeout=30.0)
         response.raise_for_status()
         return response.json()
+
+
+def get_opencode_service(base_url: Optional[str] = None) -> OpenCodeService:
+    """Factory function to get OpenCodeService with custom base_url"""
+    return OpenCodeService(base_url=base_url)
+
 
 # Global instance
 opencode_service = OpenCodeService()

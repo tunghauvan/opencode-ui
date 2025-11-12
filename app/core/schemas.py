@@ -57,12 +57,14 @@ class SessionResponse(BaseModel):
     id: int
     session_id: str
     user_id: str
+    agent_id: Optional[int] = None
     name: Optional[str] = None
     description: Optional[str] = None
     status: str
     is_active: bool
     container_id: Optional[str] = None
     container_status: Optional[str] = None
+    base_url: Optional[str] = None
     auth_data: Optional[str] = None
     environment_vars: Optional[str] = None
     created_at: datetime

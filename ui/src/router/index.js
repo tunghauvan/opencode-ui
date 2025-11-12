@@ -11,10 +11,14 @@ const router = createRouter({
       component: LoginView
     },
     {
-      path: '/',
+      path: '/session/:sessionId?',
       name: 'chat',
       component: ChatView,
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/',
+      redirect: '/session'
     }
   ]
 })

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 import json
+import docker
 
 from .core.config import settings
 from .core.docker_ops import (
@@ -35,7 +36,10 @@ from .core.session_ops import (
 )
 
 # Configuration
-DEFAULT_IMAGE = "opencode-agent:latest"
+DEFAULT_IMAGE = "opencode-ui-opencode-agent:latest"
+
+# Docker client
+docker_client = docker.from_env()
 
 # Authentication dependency
 async def verify_service_secret(x_service_secret: str = Header(..., alias="X-Service-Secret")):
@@ -67,6 +71,12 @@ app.add_middleware(
 class SessionCreateRequest(BaseModel):
     session_id: str = Field(..., description="Unique session identifier")
     github_token: Optional[str] = Field(None, description="GitHub OAuth token")
+
+class AgentSessionCreateRequest(BaseModel):
+    session_id: str = Field(..., description="Unique session identifier")
+    agent_id: int = Field(..., description="Agent ID")
+    agent_token: str = Field(..., description="GitHub OAuth token for agent")
+    title: Optional[str] = Field(None, description="Session title")
 
 class AuthData(BaseModel):
     github_copilot: Optional[Dict[str, Any]] = Field(None, description="GitHub Copilot auth configuration")
@@ -116,6 +126,95 @@ async def create_session(request: SessionCreateRequest):
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
+
+@app.post("/sessions/agent", dependencies=[Depends(verify_service_secret)])
+async def create_agent_session(request: AgentSessionCreateRequest):
+    """Create a new agent-based session with dedicated container"""
+    try:
+        print(f"Creating agent session: {request.session_id}, agent: {request.agent_id}")
+        
+        # Create session in storage
+        session_data = create_session_in_db(request.session_id, request.agent_token)
+        print(f"Created session in DB: {session_data}")
+
+        # Create session folder and auth.json with agent token
+        auth_data = create_session_folder(request.session_id, request.agent_token)
+        print(f"Created session folder with auth data: {auth_data}")
+
+        # Update session with auth data
+        update_session_auth_in_db(request.session_id, auth_data)
+        print("Updated session auth data")
+
+        # Run agent container with opencode serve
+        print(f"Running container with image: {DEFAULT_IMAGE}")
+        container_id = run_container_in_docker(
+            session_id=request.session_id,
+            image=DEFAULT_IMAGE,
+            environment={},
+            agent_token=request.agent_token,
+            is_agent=True
+        )
+        print(f"Container started: {container_id}")
+
+        # Get the actual port that Docker assigned
+        container = docker_client.containers.get(container_id)
+        ports = container.attrs['NetworkSettings']['Ports']
+        container_port = ports.get('4096/tcp', [{}])[0].get('HostPort')
+        if not container_port:
+            print("Warning: Could not determine container port")
+            container_port = "4096"  # Fallback
+        
+        print(f"Container running on port: {container_port}")
+        
+        # Wait for container to be ready and create OpenCode session
+        import time
+        import httpx
+        base_url = f"http://localhost:{container_port}"
+        
+        # Wait up to 30 seconds for container to be ready
+        for i in range(30):
+            try:
+                response = httpx.get(f"{base_url}/health", timeout=5.0)
+                if response.status_code == 200:
+                    print("Agent container is ready")
+                    break
+            except:
+                pass
+            time.sleep(1)
+        else:
+            print("Warning: Agent container did not respond to health check")
+        
+        # Try to create a session in the OpenCode agent
+        opencode_session_id = None
+        try:
+            response = httpx.post(f"{base_url}/session", json={"title": request.title or f"Agent Session {request.session_id[:8]}"}, timeout=10.0)
+            if response.status_code == 200:
+                session_data = response.json()
+                opencode_session_id = session_data.get("id")
+                print(f"Created OpenCode session: {opencode_session_id}")
+        except Exception as e:
+            print(f"Warning: Could not create OpenCode session: {e}")
+
+        # Update session with container info and OpenCode session ID
+        update_session_container_in_db(request.session_id, container_id, "running", opencode_session_id)
+        print("Updated session with container info")
+
+        # Construct base_url for agent container using Docker DNS
+        base_url = f"http://agent_{request.session_id}:4096"
+
+        return {
+            "session_id": request.session_id,
+            "agent_id": request.agent_id,
+            "container_id": container_id,
+            "container_status": "running",
+            "base_url": base_url,
+            "created_at": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        import traceback
+        print(f"Error creating agent session: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to create agent session: {str(e)}")
 
 @app.get("/sessions", response_model=SessionListResponse, dependencies=[Depends(verify_service_secret)])
 async def list_sessions():

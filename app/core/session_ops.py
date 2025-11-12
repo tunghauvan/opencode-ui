@@ -36,12 +36,14 @@ def update_session_auth(session_id: str, auth_data: Dict[str, Any]) -> None:
         raise ValueError("Session not found")
     sessions_db[session_id]["auth_data"] = auth_data
 
-def update_session_container(session_id: str, container_id: str, status: str = "running") -> None:
+def update_session_container(session_id: str, container_id: str, status: str = "running", opencode_session_id: str = None) -> None:
     """Update session container info"""
     if session_id not in sessions_db:
         raise ValueError("Session not found")
     sessions_db[session_id]["container_id"] = container_id
     sessions_db[session_id]["container_status"] = status
+    if opencode_session_id:
+        sessions_db[session_id]["opencode_session_id"] = opencode_session_id
 
 def stop_session_container(session_id: str) -> None:
     """Mark session container as stopped"""

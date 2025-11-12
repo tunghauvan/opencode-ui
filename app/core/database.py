@@ -32,8 +32,12 @@ def init_db():
 
 def get_db():
     """Get database session dependency for FastAPI"""
+    print("DEBUG: get_db called")
     db = SessionLocal()
+    print("DEBUG: SessionLocal created")
     try:
+        print("DEBUG: yielding db")
         yield db
     finally:
+        print("DEBUG: closing db")
         db.close()

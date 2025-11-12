@@ -15,7 +15,11 @@ from datetime import datetime
 from core.opencode_client import opencode_service
 from core.config import settings
 from core.database import engine, get_db, init_db
-from core.models import User, Base, Session as DBSession
+from core import models
+User = models.User
+Base = models.Base
+Agent = models.Agent
+SessionModel = models.Session
 from core.github_oauth import get_github_oauth_service
 from core.schemas import (
     LoginResponse, 
@@ -67,8 +71,9 @@ class CreateSessionRequest(BaseModel):
     title: Optional[str] = None
 
 class ChatRequest(BaseModel):
-    prompt: str
     model: Model
+    agent: str = "build"
+    parts: List[Dict[str, Any]]
 
 class SessionResponse(BaseModel):
     id: str
@@ -81,33 +86,105 @@ class MessageResponse(BaseModel):
     timestamp: Optional[str] = None
 
 # API Routes
-@app.get("/api/sessions", response_model=List[SessionResponse])
-async def list_sessions(current_user: User = Depends(get_current_user_dependency)):
+@app.get("/api/sessions")
+async def list_sessions(current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
     """List all sessions"""
+    import logging
+    logging.warning(f"DEBUG: list_sessions called for user {current_user.id}")
     try:
-        sessions = opencode_service.list_sessions()
-        return [
+        logging.warning("DEBUG: About to query sessions")
+        # Since we removed the shared service, list sessions from database instead
+        sessions = db.query(SessionModel).filter(SessionModel.user_id == current_user.id).all()
+        logging.warning(f"DEBUG: Found {len(sessions)} sessions")
+        result = [
             SessionResponse(
-                id=session.get('id') if isinstance(session, dict) else session.id,
-                title=session.get('title') if isinstance(session, dict) else getattr(session, 'title', None),
-                created_at=session.get('created_at') if isinstance(session, dict) else getattr(session, 'created_at', None)
+                id=session.session_id,
+                title=session.name,
+                created_at=session.created_at.isoformat() if session.created_at else None
             )
             for session in sessions
         ]
+        logging.warning(f"DEBUG: Created result with {len(result)} items")
+        return result
     except Exception as e:
+        import logging
+        logging.error(f"Error in list_sessions: {e}")
+        import traceback
+        logging.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Failed to list sessions: {str(e)}")
 
 @app.post("/api/sessions", response_model=SessionResponse)
-async def create_session(request: Optional[CreateSessionRequest] = None, current_user: User = Depends(get_current_user_dependency)):
+async def create_session(request: Optional[CreateSessionRequest] = None, current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
     """Create a new session"""
     try:
-        title = request.title if request else None
-        session = opencode_service.create_session(title)
-        return SessionResponse(
-            id=session.get('id') if isinstance(session, dict) else session.id,
-            title=session.get('title') if isinstance(session, dict) else getattr(session, 'title', None),
-            created_at=session.get('created_at') if isinstance(session, dict) else getattr(session, 'created_at', None)
+        # Check if user has any active agents
+        from core.models import Agent
+        agents = db.query(Agent).filter(Agent.user_id == current_user.id, Agent.is_active == True).all()
+        
+        if not agents:
+            # No agent configured - return error prompting agent creation
+            raise HTTPException(
+                status_code=400, 
+                detail="No agent configured. Please create an agent first in Settings."
+            )
+        
+        # User has agent(s) - use the first active agent
+        agent = agents[0]
+        
+        # Generate unique session ID (must start with 'ses' for OpenCode API)
+        import uuid
+        session_id = f"ses_{str(uuid.uuid4())}"
+        
+        # Call agent controller to create agent-based session
+        import httpx
+        agent_controller_url = os.getenv("AGENT_CONTROLLER_URL", "http://localhost:8001")
+        service_secret = os.getenv("AGENT_SERVICE_SECRET", "default-secret-change-in-production")
+        
+        # Create agent session via agent controller
+        response = httpx.post(
+            f"{agent_controller_url}/sessions/agent",
+            json={
+                "session_id": session_id,
+                "agent_id": agent.id,
+                "agent_token": agent.access_token,
+                "title": request.title if request else None
+            },
+            headers={"X-Service-Secret": service_secret},
+            timeout=60.0
         )
+        response.raise_for_status()
+        agent_session_data = response.json()
+        
+        # Create session in database
+        db_session = SessionModel(
+            session_id=session_id,
+            user_id=current_user.id,
+            agent_id=agent.id,
+            name=request.title if request else None,
+            status="active",
+            is_active=True,
+            container_id=agent_session_data.get("container_id"),
+            container_status=agent_session_data.get("container_status"),
+            base_url=agent_session_data.get("base_url"),
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        
+        db.add(db_session)
+        db.commit()
+        db.refresh(db_session)
+        
+        # Update agent last_used
+        agent.last_used = datetime.utcnow()
+        db.commit()
+        
+        return SessionResponse(
+            id=session_id,
+            title=request.title if request else None,
+            created_at=db_session.created_at.isoformat() if db_session.created_at else None
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         error_msg = str(e)
         if "not supported" in error_msg.lower():
@@ -115,39 +192,100 @@ async def create_session(request: Optional[CreateSessionRequest] = None, current
         raise HTTPException(status_code=500, detail=f"Failed to create session: {error_msg}")
 
 @app.get("/api/sessions/{session_id}")
-async def get_session(session_id: str, current_user: User = Depends(get_current_user_dependency)):
+async def get_session(session_id: str, current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
     """Get session details"""
     try:
-        session = opencode_service.get_session(session_id)
+        # Get session from database instead of shared service
+        session = db.query(SessionModel).filter(
+            SessionModel.session_id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
         return SessionResponse(
-            id=session.get('id', session_id),
-            title=session.get('title'),
-            created_at=session.get('created_at')
+            id=session.session_id,
+            title=session.name,
+            created_at=session.created_at.isoformat() if session.created_at else None
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Session not found: {str(e)}")
 
 @app.delete("/api/sessions/{session_id}")
-async def delete_session(session_id: str, current_user: User = Depends(get_current_user_dependency)):
+async def delete_session(session_id: str, current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
     """Delete a session"""
     try:
-        result = opencode_service.delete_session(session_id)
-        if result:
-            return {"message": "Session deleted successfully"}
-        else:
+        # Get session from database
+        session = db.query(SessionModel).filter(
+            SessionModel.session_id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+        
+        if not session:
             raise HTTPException(status_code=404, detail="Session not found")
+        
+        # TODO: Clean up agent container if it exists
+        # For now, just delete from database
+        db.delete(session)
+        db.commit()
+        
+        return {"message": "Session deleted successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete session: {str(e)}")
 
 @app.post("/api/sessions/{session_id}/chat")
-async def chat(session_id: str, request: ChatRequest, current_user: User = Depends(get_current_user_dependency)):
+async def chat(session_id: str, request: ChatRequest, current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
     """Send a chat message"""
     try:
-        response = opencode_service.send_prompt(
-            session_id, 
-            request.prompt,
+        # Check if this is a database session with custom base_url
+        db_session = db.query(SessionModel).filter(
+            SessionModel.session_id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+        
+        if not db_session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # All sessions must now be agent-based (no fallback to shared service)
+        if not db_session.base_url:
+            raise HTTPException(
+                status_code=400, 
+                detail="Session is not properly configured. Please create a new session with an agent."
+            )
+        
+        # Use agent-specific OpenCode service
+        from core.opencode_client import get_opencode_service
+        agent_service = get_opencode_service(base_url=db_session.base_url)
+        
+        # For agent containers, we need to create an OpenCode session
+        # Try to create a session in the agent
+        try:
+            session_response = agent_service.create_session(title=db_session.name or f"Session {session_id[:8]}")
+            if isinstance(session_response, dict) and 'id' in session_response:
+                opencode_session_id = session_response['id']
+            else:
+                # Fallback to using the database session ID
+                opencode_session_id = session_id
+        except Exception as create_error:
+            import logging
+            logging.warning(f"Could not create OpenCode session: {create_error}")
+            # Fallback to using the database session ID
+            opencode_session_id = session_id
+        
+        response = agent_service.send_prompt(
+            opencode_session_id, 
+            request.parts,
             model=request.model
         )
+        
+        # Update session last_activity
+        db_session.last_activity = datetime.utcnow()
+        db.commit()
         
         # Extract text content from OpenCode API response
         content = ""
@@ -181,18 +319,74 @@ async def chat(session_id: str, request: ChatRequest, current_user: User = Depen
             "content": content.strip(),
             "session_id": session_id
         }
+    except HTTPException:
+        raise
     except Exception as e:
+        import logging
+        logging.error(f"Error sending chat message for session {session_id}: {str(e)}")
+        # If the agent container is not available, return a helpful message
+        if "Name or service not known" in str(e) or "Connection refused" in str(e):
+            raise HTTPException(status_code=503, detail="Agent service is currently unavailable. Please try again later or create a new session.")
         raise HTTPException(status_code=500, detail=f"Failed to send message: {str(e)}")
 
 @app.get("/api/sessions/{session_id}/messages")
-async def get_session_messages(session_id: str, current_user: User = Depends(get_current_user_dependency)):
+async def get_session_messages(session_id: str, current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
     """Get all messages from a session"""
     try:
-        messages = opencode_service.get_messages(session_id)
+        # Check if session exists in database
+        session = db.query(SessionModel).filter(
+            SessionModel.session_id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Use agent-specific service to get messages
+        if not session.base_url:
+            raise HTTPException(status_code=400, detail="Session is not properly configured")
+        
+        from core.opencode_client import get_opencode_service
+        agent_service = get_opencode_service(base_url=session.base_url)
+        
+        # For agent containers, we need to create an OpenCode session
+        # Try to create a session in the agent
+        try:
+            session_response = agent_service.create_session(title=session.name or f"Session {session_id[:8]}")
+            if isinstance(session_response, dict) and 'id' in session_response:
+                opencode_session_id = session_response['id']
+            else:
+                # Fallback to using the database session ID
+                opencode_session_id = session_id
+        except Exception as create_error:
+            import logging
+            logging.warning(f"Could not create OpenCode session: {create_error}")
+            # Fallback to using the database session ID
+            opencode_session_id = session_id
+        
+        # Check if session exists in agent, create if not
+        try:
+            messages = agent_service.get_messages(opencode_session_id)
+        except Exception:
+            # Session doesn't exist in agent, create it
+            try:
+                agent_service.create_session(title=session.name or f"Session {session_id[:8]}")
+                messages = []  # New session has no messages
+            except Exception as create_error:
+                import logging
+                logging.warning(f"Could not create session in agent: {create_error}")
+                messages = []  # Return empty messages if we can't create session
         
         # Return raw messages with full details
         return messages
+    except HTTPException:
+        raise
     except Exception as e:
+        import logging
+        logging.error(f"Error getting messages for session {session_id}: {str(e)}")
+        # If the agent container is not available, return empty messages
+        if "Name or service not known" in str(e) or "Connection refused" in str(e):
+            return []
         raise HTTPException(status_code=500, detail=f"Failed to get messages: {str(e)}")
 
 # Database-backed Session Management Routes
@@ -200,7 +394,7 @@ async def get_session_messages(session_id: str, current_user: User = Depends(get
 async def list_db_sessions(current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
     """List all database sessions for the current user"""
     try:
-        sessions = db.query(DBSession).filter(DBSession.user_id == current_user.id).all()
+        sessions = db.query(SessionModel).filter(SessionModel.user_id == current_user.id).all()
         
         return SessionListResponse(
             sessions=[
@@ -208,12 +402,14 @@ async def list_db_sessions(current_user: User = Depends(get_current_user_depende
                     id=session.id,
                     session_id=session.session_id,
                     user_id=session.user_id,
+                    agent_id=session.agent_id,
                     name=session.name,
                     description=session.description,
                     status=session.status,
                     is_active=session.is_active,
                     container_id=session.container_id,
                     container_status=session.container_status,
+                    base_url=session.base_url,
                     auth_data=session.auth_data,
                     environment_vars=session.environment_vars,
                     created_at=session.created_at,
@@ -231,16 +427,16 @@ async def create_db_session(request: SessionCreateRequest, current_user: User = 
     """Create a new database session for the current user"""
     try:
         # Check if session_id already exists for this user
-        existing_session = db.query(DBSession).filter(
-            DBSession.session_id == request.session_id,
-            DBSession.user_id == current_user.id
+        existing_session = db.query(SessionModel).filter(
+            SessionModel.session_id == request.session_id,
+            SessionModel.user_id == current_user.id
         ).first()
         
         if existing_session:
             raise HTTPException(status_code=409, detail="Session with this ID already exists")
         
         # Create new session
-        session = DBSession(
+        session = SessionModel(
             session_id=request.session_id,
             user_id=current_user.id,
             name=request.name,
@@ -280,9 +476,9 @@ async def create_db_session(request: SessionCreateRequest, current_user: User = 
 async def get_db_session(session_id: str, current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
     """Get a specific database session"""
     try:
-        session = db.query(DBSession).filter(
-            DBSession.session_id == session_id,
-            DBSession.user_id == current_user.id
+        session = db.query(SessionModel).filter(
+            SessionModel.session_id == session_id,
+            SessionModel.user_id == current_user.id
         ).first()
         
         if not session:
@@ -292,12 +488,14 @@ async def get_db_session(session_id: str, current_user: User = Depends(get_curre
             id=session.id,
             session_id=session.session_id,
             user_id=session.user_id,
+            agent_id=session.agent_id,
             name=session.name,
             description=session.description,
             status=session.status,
             is_active=session.is_active,
             container_id=session.container_id,
             container_status=session.container_status,
+            base_url=session.base_url,
             auth_data=session.auth_data,
             environment_vars=session.environment_vars,
             created_at=session.created_at,
@@ -313,9 +511,9 @@ async def get_db_session(session_id: str, current_user: User = Depends(get_curre
 async def update_db_session(session_id: str, request: SessionCreateRequest, current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
     """Update a database session"""
     try:
-        session = db.query(DBSession).filter(
-            DBSession.session_id == session_id,
-            DBSession.user_id == current_user.id
+        session = db.query(SessionModel).filter(
+            SessionModel.session_id == session_id,
+            SessionModel.user_id == current_user.id
         ).first()
         
         if not session:
@@ -333,12 +531,14 @@ async def update_db_session(session_id: str, request: SessionCreateRequest, curr
             id=session.id,
             session_id=session.session_id,
             user_id=session.user_id,
+            agent_id=session.agent_id,
             name=session.name,
             description=session.description,
             status=session.status,
             is_active=session.is_active,
             container_id=session.container_id,
             container_status=session.container_status,
+            base_url=session.base_url,
             auth_data=session.auth_data,
             environment_vars=session.environment_vars,
             created_at=session.created_at,
@@ -354,9 +554,9 @@ async def update_db_session(session_id: str, request: SessionCreateRequest, curr
 async def delete_db_session(session_id: str, current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
     """Delete a database session"""
     try:
-        session = db.query(DBSession).filter(
-            DBSession.session_id == session_id,
-            DBSession.user_id == current_user.id
+        session = db.query(SessionModel).filter(
+            SessionModel.session_id == session_id,
+            SessionModel.user_id == current_user.id
         ).first()
         
         if not session:
@@ -380,35 +580,33 @@ async def health_check():
 async def get_models(current_user: User = Depends(get_current_user_dependency)):
     """Get available models from OpenCode API"""
     try:
-        # Fetch providers from OpenCode API
-        import httpx
-        opencode_url = settings.OPENCODE_BASE_URL
-        response = httpx.get(f"{opencode_url}/config/providers", timeout=30.0)
-        response.raise_for_status()
-        providers_data = response.json()
-        
-        # Transform to frontend format
-        transformed_providers = []
-        for provider in providers_data.get("providers", []):
-            models_dict = {}
-            for model_id, model_info in provider.get("models", {}).items():
-                models_dict[model_id] = {
-                    "id": model_id,
-                    "name": model_info.get("name", model_id)
-                }
-            
-            transformed_providers.append({
-                "id": provider["id"],
-                "name": provider["name"],
-                "models": models_dict
-            })
-        
+        # Since we removed the shared service, models are now fetched from agent containers
+        # For now, return hardcoded models until we implement agent-based model fetching
         return {
-            "providers": transformed_providers,
-            "default": providers_data.get("default", {})
+            "providers": [
+                {
+                    "id": "github-copilot",
+                    "name": "GitHub Copilot",
+                    "models": [
+                        {"id": "gpt-5-mini", "name": "GPT-5 Mini"},
+                        {"id": "gpt-5", "name": "GPT-5"}
+                    ]
+                },
+                {
+                    "id": "opencode",
+                    "name": "OpenCode",
+                    "models": [
+                        {"id": "big-pickle", "name": "Big Pickle"}
+                    ]
+                }
+            ],
+            "default": {
+                "github-copilot": "gpt-5-mini",
+                "opencode": "big-pickle"
+            }
         }
     except Exception as e:
-        # Fallback to hardcoded models if OpenCode API fails
+        # Fallback to hardcoded models
         return {
             "providers": [
                 {

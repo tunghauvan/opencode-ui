@@ -81,33 +81,47 @@ class Session(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     session_id = Column(String, unique=True, index=True, nullable=False)  # Unique session identifier
-    
+
     # Foreign key to user
     user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
-    
+
+    # Foreign key to agent (optional - for agent-based sessions)
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True, index=True)
+
     # Session metadata
     name = Column(String, nullable=True)  # Optional session name
     description = Column(String, nullable=True)  # Optional session description
-    
+
     # Session status
     status = Column(String, default="active")  # active, inactive, completed, etc.
     is_active = Column(Boolean, default=True)
-    
+
     # Container information (if applicable)
     container_id = Column(String, nullable=True)
     container_status = Column(String, nullable=True)
-    
+    base_url = Column(String, nullable=True)  # Custom base URL for agent containers
+
     # Session data (JSON stored as string)
     auth_data = Column(String, nullable=True)  # JSON string for auth configuration
     environment_vars = Column(String, nullable=True)  # JSON string for environment variables
-    
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_activity = Column(DateTime, nullable=True)
-    
+
     # Relationship back to user
     user = relationship("User", back_populates="sessions")
 
+    # Relationship to agent
+    agent = relationship("Agent")
+
     def __repr__(self):
         return f"<Session(session_id={self.session_id}, user_id={self.user_id}, status={self.status})>"
+
+# Explicitly add Session to the module
+import sys
+current_module = sys.modules[__name__]
+current_module.Session = Session
+
+

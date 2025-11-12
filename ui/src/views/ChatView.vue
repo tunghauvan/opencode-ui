@@ -20,14 +20,18 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from '../stores/session'
 import { useUserStore } from '../stores/user'
+import { opencodeApi } from '../services/api'
 import SessionSidebar from '../components/SessionSidebar.vue'
 import ChatWindow from '../components/ChatWindow.vue'
 import EmptyState from '../components/EmptyState.vue'
 import SettingsDialog from '../components/SettingsDialog.vue'
 
+const route = useRoute()
+const router = useRouter()
 const sessionStore = useSessionStore()
 const userStore = useUserStore()
 
@@ -38,8 +42,51 @@ onMounted(async () => {
   await sessionStore.fetchSessions()
   await userStore.fetchUser()
 
-  if (sessionStore.sessions.length > 0 && !sessionStore.currentSessionId) {
+  // Handle sessionId from URL params
+  const sessionId = route.params.sessionId
+  if (sessionId) {
+    // Check if session exists in store
+    const existingSession = sessionStore.sessions.find(s => s.id === sessionId)
+    if (existingSession) {
+      sessionStore.selectSession(sessionId)
+    } else {
+      // Session not found, redirect to /session
+      router.replace('/session')
+    }
+  } else if (sessionStore.sessions.length > 0 && !sessionStore.currentSessionId) {
+    // No sessionId in URL but we have sessions, select the first one
     sessionStore.selectSession(sessionStore.sessions[0].id)
+  }
+})
+
+// Watch for currentSessionId changes and update URL
+watch(() => sessionStore.currentSessionId, (newSessionId) => {
+  if (newSessionId) {
+    router.replace(`/session/${newSessionId}`)
+  } else {
+    router.replace('/session')
+  }
+}, { immediate: true })
+
+// Watch for URL params changes (when user navigates via browser back/forward)
+watch(() => route.params.sessionId, async (newSessionId) => {
+  if (newSessionId && newSessionId !== sessionStore.currentSessionId) {
+    const existingSession = sessionStore.sessions.find(s => s.id === newSessionId)
+    if (existingSession) {
+      sessionStore.selectSession(newSessionId)
+    } else {
+      // Try to fetch the session from API
+      try {
+        const session = await opencodeApi.getSession(newSessionId)
+        if (session) {
+          sessionStore.sessions.unshift(session)
+          sessionStore.selectSession(newSessionId)
+        }
+      } catch (error) {
+        console.error('Error fetching session:', error)
+        router.replace('/session')
+      }
+    }
   }
 })
 

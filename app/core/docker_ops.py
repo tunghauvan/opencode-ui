@@ -108,10 +108,43 @@ def cleanup_container(container_id: str) -> None:
     except Exception as e:
         print(f"Error cleaning up container {container_id}: {e}")
 
-def run_session_container(session_id: str, image: str, environment: Dict[str, str]) -> str:
-    """Run container for session"""
-    # Prepare entrypoint script
-    entrypoint_script = f'''
+def run_session_container(session_id: str, image: str, environment: Dict[str, str], agent_token: Optional[str] = None, is_agent: bool = False) -> str:
+    """Run container for session
+    
+    Args:
+        session_id: Unique session identifier
+        image: Docker image to run
+        environment: Environment variables for the container
+        agent_token: GitHub OAuth token for agent authentication
+        is_agent: If True, runs 'opencode serve' for agent containers
+    
+    Returns:
+        Container ID
+    """
+    if is_agent:
+        # Agent container: run opencode serve
+        entrypoint_script = f'''
+mkdir -p /root/.local/share/opencode
+if [ -f /mnt/volume/{session_id}/auth.json ]; then
+    cp /mnt/volume/{session_id}/auth.json /root/.local/share/opencode/auth.json
+fi
+echo "Starting OpenCode agent server for session {session_id}"
+opencode serve --port 4096 --hostname 0.0.0.0 --print-logs
+'''
+        container_name = f"agent_{session_id}"
+        
+        # Default environment for agent
+        env_vars = {
+            "SESSION_ID": session_id,
+        }
+        
+        # Add agent token if provided
+        if agent_token:
+            env_vars["GITHUB_TOKEN"] = agent_token
+            
+    else:
+        # Regular session container
+        entrypoint_script = f'''
 mkdir -p /root/.local/share/opencode
 if [ -f /mnt/volume/{session_id}/auth.json ]; then
     cp /mnt/volume/{session_id}/auth.json /root/.local/share/opencode/auth.json
@@ -119,14 +152,15 @@ fi
 echo "Session {session_id} container started"
 sleep infinity
 '''
-
-    # Default environment
-    env_vars = {
-        "SESSION_ID": session_id,
-        "DB_PASSWORD": "my-super-secret-password-12345",
-        "API_KEY": "sk-1234567890abcdef",
-        "SECRET_TOKEN": "token-xyz-987654321"
-    }
+        container_name = f"opencode-session-{session_id}"
+        
+        # Default environment
+        env_vars = {
+            "SESSION_ID": session_id,
+            "DB_PASSWORD": "my-super-secret-password-12345",
+            "API_KEY": "sk-1234567890abcdef",
+            "SECRET_TOKEN": "token-xyz-987654321"
+        }
 
     # Merge with request environment
     if environment:
@@ -136,9 +170,11 @@ sleep infinity
     container = docker_client.containers.run(
         image,
         detach=True,
-        name=f"opencode-session-{session_id}",
+        name=container_name,
         environment=env_vars,
         volumes={VOLUME_NAME: {'bind': '/mnt/volume', 'mode': 'rw'}},
+        network="opencode-ui_opencode-network" if is_agent else None,  # Join network for agent containers
+        ports={'4096/tcp': None} if is_agent else None,  # Expose port 4096 for agent containers
         command=['sh', '-c', entrypoint_script]
     )
 
