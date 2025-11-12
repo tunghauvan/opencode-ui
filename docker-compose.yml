@@ -44,6 +44,27 @@ services:
     networks:
       - opencode-network
 
+  agent-controller:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./app:/app/app
+      - ./requirements.txt:/app/requirements.txt
+      - ./.env:/app/.env
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - AGENT_CONTROLLER_PORT=8001
+      - AGENT_SERVICE_SECRET=default-secret-change-in-production
+      - PYTHONPATH=/app
+    env_file:
+      - .env
+    networks:
+      - opencode-network
+    command: ["python", "-m", "app.agent-controller"]
+
 networks:
   opencode-network:
     driver: bridge

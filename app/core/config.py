@@ -13,4 +13,7 @@ class Settings:
     # Optional authentication
     OPENCODE_API_KEY: Optional[str] = os.getenv("OPENCODE_API_KEY")
 
+    # Agent Controller settings
+    AGENT_SERVICE_SECRET: str = os.getenv("AGENT_SERVICE_SECRET", "default-secret-change-in-production")
+
 settings = Settings()
