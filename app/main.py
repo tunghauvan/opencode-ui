@@ -15,14 +15,18 @@ from datetime import datetime
 from core.opencode_client import opencode_service
 from core.config import settings
 from core.database import engine, get_db, init_db
-from core.models import User, Base
+from core.models import User, Base, Session as DBSession
 from core.github_oauth import get_github_oauth_service
 from core.schemas import (
     LoginResponse, 
     AuthorizationUrlResponse, 
     GitHubUserResponse,
-    TokenRefreshResponse
+    TokenRefreshResponse,
+    SessionCreateRequest,
+    SessionResponse,
+    SessionListResponse
 )
+from backend.routes import backend_router
 
 # Authentication dependency
 async def get_current_user_dependency(request: Request, db: Session = Depends(get_db)):
@@ -50,6 +54,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include backend routes
+app.include_router(backend_router)
 
 # Pydantic models
 class Model(BaseModel):
@@ -187,6 +194,182 @@ async def get_session_messages(session_id: str, current_user: User = Depends(get
         return messages
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get messages: {str(e)}")
+
+# Database-backed Session Management Routes
+@app.get("/api/db/sessions", response_model=SessionListResponse)
+async def list_db_sessions(current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
+    """List all database sessions for the current user"""
+    try:
+        sessions = db.query(DBSession).filter(DBSession.user_id == current_user.id).all()
+        
+        return SessionListResponse(
+            sessions=[
+                SessionResponse(
+                    id=session.id,
+                    session_id=session.session_id,
+                    user_id=session.user_id,
+                    name=session.name,
+                    description=session.description,
+                    status=session.status,
+                    is_active=session.is_active,
+                    container_id=session.container_id,
+                    container_status=session.container_status,
+                    auth_data=session.auth_data,
+                    environment_vars=session.environment_vars,
+                    created_at=session.created_at,
+                    updated_at=session.updated_at,
+                    last_activity=session.last_activity
+                )
+                for session in sessions
+            ]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list sessions: {str(e)}")
+
+@app.post("/api/db/sessions", response_model=SessionResponse)
+async def create_db_session(request: SessionCreateRequest, current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
+    """Create a new database session for the current user"""
+    try:
+        # Check if session_id already exists for this user
+        existing_session = db.query(DBSession).filter(
+            DBSession.session_id == request.session_id,
+            DBSession.user_id == current_user.id
+        ).first()
+        
+        if existing_session:
+            raise HTTPException(status_code=409, detail="Session with this ID already exists")
+        
+        # Create new session
+        session = DBSession(
+            session_id=request.session_id,
+            user_id=current_user.id,
+            name=request.name,
+            description=request.description,
+            status="active",
+            is_active=True,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        
+        return SessionResponse(
+            id=session.id,
+            session_id=session.session_id,
+            user_id=session.user_id,
+            name=session.name,
+            description=session.description,
+            status=session.status,
+            is_active=session.is_active,
+            container_id=session.container_id,
+            container_status=session.container_status,
+            auth_data=session.auth_data,
+            environment_vars=session.environment_vars,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+            last_activity=session.last_activity
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
+
+@app.get("/api/db/sessions/{session_id}", response_model=SessionResponse)
+async def get_db_session(session_id: str, current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
+    """Get a specific database session"""
+    try:
+        session = db.query(DBSession).filter(
+            DBSession.session_id == session_id,
+            DBSession.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        return SessionResponse(
+            id=session.id,
+            session_id=session.session_id,
+            user_id=session.user_id,
+            name=session.name,
+            description=session.description,
+            status=session.status,
+            is_active=session.is_active,
+            container_id=session.container_id,
+            container_status=session.container_status,
+            auth_data=session.auth_data,
+            environment_vars=session.environment_vars,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+            last_activity=session.last_activity
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get session: {str(e)}")
+
+@app.put("/api/db/sessions/{session_id}")
+async def update_db_session(session_id: str, request: SessionCreateRequest, current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
+    """Update a database session"""
+    try:
+        session = db.query(DBSession).filter(
+            DBSession.session_id == session_id,
+            DBSession.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Update fields
+        session.name = request.name
+        session.description = request.description
+        session.updated_at = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(session)
+        
+        return SessionResponse(
+            id=session.id,
+            session_id=session.session_id,
+            user_id=session.user_id,
+            name=session.name,
+            description=session.description,
+            status=session.status,
+            is_active=session.is_active,
+            container_id=session.container_id,
+            container_status=session.container_status,
+            auth_data=session.auth_data,
+            environment_vars=session.environment_vars,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+            last_activity=session.last_activity
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update session: {str(e)}")
+
+@app.delete("/api/db/sessions/{session_id}")
+async def delete_db_session(session_id: str, current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
+    """Delete a database session"""
+    try:
+        session = db.query(DBSession).filter(
+            DBSession.session_id == session_id,
+            DBSession.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        db.delete(session)
+        db.commit()
+        
+        return {"message": "Session deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete session: {str(e)}")
 
 @app.get("/health")
 async def health_check():
