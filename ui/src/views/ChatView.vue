@@ -24,7 +24,7 @@ import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from '../stores/session'
 import { useUserStore } from '../stores/user'
-import { opencodeApi } from '../services/api'
+import { backendApi } from '../services/api'
 import SessionSidebar from '../components/SessionSidebar.vue'
 import ChatWindow from '../components/ChatWindow.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -46,7 +46,7 @@ onMounted(async () => {
   const sessionId = route.params.sessionId
   if (sessionId) {
     // Check if session exists in store
-    const existingSession = sessionStore.sessions.find(s => s.id === sessionId)
+    const existingSession = sessionStore.sessions.find(s => s.session_id === sessionId)
     if (existingSession) {
       sessionStore.selectSession(sessionId)
     } else {
@@ -55,7 +55,7 @@ onMounted(async () => {
     }
   } else if (sessionStore.sessions.length > 0 && !sessionStore.currentSessionId) {
     // No sessionId in URL but we have sessions, select the first one
-    sessionStore.selectSession(sessionStore.sessions[0].id)
+    sessionStore.selectSession(sessionStore.sessions[0].session_id)
   }
 })
 
@@ -71,13 +71,13 @@ watch(() => sessionStore.currentSessionId, (newSessionId) => {
 // Watch for URL params changes (when user navigates via browser back/forward)
 watch(() => route.params.sessionId, async (newSessionId) => {
   if (newSessionId && newSessionId !== sessionStore.currentSessionId) {
-    const existingSession = sessionStore.sessions.find(s => s.id === newSessionId)
+    const existingSession = sessionStore.sessions.find(s => s.session_id === newSessionId)
     if (existingSession) {
       sessionStore.selectSession(newSessionId)
     } else {
       // Try to fetch the session from API
       try {
-        const session = await opencodeApi.getSession(newSessionId)
+        const session = await backendApi.getSession(newSessionId)
         if (session) {
           sessionStore.sessions.unshift(session)
           sessionStore.selectSession(newSessionId)

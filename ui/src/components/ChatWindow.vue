@@ -46,6 +46,15 @@
           </button>
         </div>
       </div>
+      
+      <!-- Container Controls -->
+      <div v-if="sessionStore.currentSession" class="mt-3">
+        <ContainerControls
+          :session-id="sessionStore.currentSessionId"
+          :container-status="sessionStore.currentSession.container_status"
+          :container-id="sessionStore.currentSession.container_id"
+        />
+      </div>
     </div>
 
     <!-- Messages Area with Modern Design -->
@@ -126,6 +135,7 @@ import { useSessionStore } from '../stores/session'
 import { useChatStore } from '../stores/chat'
 import MessageBubble from './MessageBubble.vue'
 import ChatInput from './ChatInput.vue'
+import ContainerControls from './ContainerControls.vue'
 
 const sessionStore = useSessionStore()
 const chatStore = useChatStore()

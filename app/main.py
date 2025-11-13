@@ -560,54 +560,115 @@ async def health_check():
 async def get_models(current_user: User = Depends(get_current_user_dependency)):
     """Get available models from OpenCode API"""
     try:
-        # Since we removed the shared service, models are now fetched from agent containers
-        # For now, return hardcoded models until we implement agent-based model fetching
+        # Fetch models from agent containers via backend API
+        # We need to get a running agent container to query its /config/providers endpoint
+        
+        # For now, try to get models from a running container
+        # In production, this should be cached and refreshed periodically
+        
+        # Try to find an active session with a running container
+        from core.database import get_db
+        from core.models import Session
+        
+        db = next(get_db())
+        try:
+            # Find the most recent active session with a container
+            active_session = db.query(Session).filter(
+                Session.user_id == current_user.id,
+                Session.is_active == True,
+                Session.container_id.isnot(None)
+            ).order_by(Session.last_activity.desc()).first()
+            
+            if active_session and active_session.base_url:
+                # Query the agent container for providers
+                import requests
+                try:
+                    providers_url = f"{active_session.base_url}/config/providers"
+                    response = requests.get(providers_url, timeout=5)
+                    
+                    if response.status_code == 200:
+                        providers_data = response.json()
+                        
+                        # Transform the data to match frontend expectations
+                        transformed_providers = []
+                        default_config = {}
+                        
+                        for provider_data in providers_data.get("providers", []):
+                            provider_id = provider_data.get("id")
+                            provider_name = provider_data.get("name", provider_id)
+                            
+                            # Transform models dict to array format expected by frontend
+                            models_dict = provider_data.get("models", {})
+                            models_array = []
+                            
+                            for model_id, model_info in models_dict.items():
+                                if isinstance(model_info, dict):
+                                    models_array.append({
+                                        "id": model_id,
+                                        "name": model_info.get("name", model_id)
+                                    })
+                                else:
+                                    # Handle case where model_info is just a string
+                                    models_array.append({
+                                        "id": model_id,
+                                        "name": str(model_info)
+                                    })
+                            
+                            transformed_providers.append({
+                                "id": provider_id,
+                                "name": provider_name,
+                                "models": models_array
+                            })
+                        
+                        # Get default provider/model
+                        defaults = providers_data.get("default", {})
+                        if defaults:
+                            for provider_id, model_id in defaults.items():
+                                default_config[provider_id] = model_id
+                        
+                        return {
+                            "providers": transformed_providers,
+                            "default": default_config
+                        }
+                        
+                except requests.RequestException as e:
+                    print(f"Failed to fetch providers from container: {e}")
+        
+        finally:
+            db.close()
+        
+        # Fallback to hardcoded models if no active container or fetch failed
         return {
             "providers": [
-                {
-                    "id": "github-copilot",
-                    "name": "GitHub Copilot",
-                    "models": [
-                        {"id": "gpt-5-mini", "name": "GPT-5 Mini"},
-                        {"id": "gpt-5", "name": "GPT-5"}
-                    ]
-                },
                 {
                     "id": "opencode",
                     "name": "OpenCode",
                     "models": [
+                        {"id": "grok-code", "name": "Grok Code Fast 1"},
                         {"id": "big-pickle", "name": "Big Pickle"}
                     ]
                 }
             ],
             "default": {
-                "github-copilot": "gpt-5-mini",
-                "opencode": "big-pickle"
+                "opencode": "grok-code"
             }
         }
     except Exception as e:
+        print(f"Error fetching models: {e}")
         # Fallback to hardcoded models
         return {
             "providers": [
                 {
-                    "id": "github-copilot",
-                    "name": "GitHub Copilot",
-                    "models": [
-                        {"id": "gpt-5-mini", "name": "GPT-5 Mini"},
-                        {"id": "gpt-5", "name": "GPT-5"}
-                    ]
-                },
-                {
                     "id": "opencode",
                     "name": "OpenCode",
                     "models": [
+                        {"id": "grok-code", "name": "Grok Code Fast 1"},
                         {"id": "big-pickle", "name": "Big Pickle"}
                     ]
                 }
             ],
             "default": {
-                "github-copilot": "gpt-5-mini",
-                "opencode": "big-pickle"
+                "opencode": "grok-code"
             }
         }
 

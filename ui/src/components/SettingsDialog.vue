@@ -120,6 +120,14 @@
           <div v-if="activeTab === 'preferences'" class="tab-panel">
             <div class="preferences-section">
               <h3>Preferences</h3>
+              
+              <!-- Model Selection -->
+              <div class="preference-item model-selection">
+                <h4>AI Model</h4>
+                <p class="model-description">Choose the AI model and provider for your conversations</p>
+                <ModelSelector />
+              </div>
+              
               <div class="preference-item">
                 <label for="theme">Theme:</label>
                 <select id="theme" v-model="theme" @change="savePreferences">
@@ -262,6 +270,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import ModelSelector from './ModelSelector.vue'
 
 // Props
 const props = defineProps({
@@ -869,6 +878,27 @@ const createAnotherAgent = () => {
   padding: 0.75rem;
   background: #f8f9fa;
   border-radius: 6px;
+}
+
+.preference-item.model-selection {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 1rem;
+}
+
+.preference-item.model-selection h4 {
+  margin: 0 0 0.25rem 0;
+  color: #1a1a1a;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.model-description {
+  margin: 0 0 0.75rem 0;
+  color: #6c757d;
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 
 .preference-item label {

@@ -48,11 +48,11 @@
       <div v-else class="space-y-1 animate-fade-in">
         <SessionItem
           v-for="session in sessionStore.sessions"
-          :key="session.id"
+          :key="session.session_id"
           :session="session"
-          :active="session.id === sessionStore.currentSessionId"
-          @click="sessionStore.selectSession(session.id)"
-          @delete="handleDeleteSession(session.id)"
+          :active="session.session_id === sessionStore.currentSessionId"
+          @click="sessionStore.selectSession(session.session_id)"
+          @delete="handleDeleteSession(session.session_id)"
           class="animate-slide-up"
         />
       </div>

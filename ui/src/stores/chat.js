@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import { opencodeApi } from '../services/api'
+import { opencodeApi, backendApi } from '../services/api'
 
 export const useChatStore = defineStore('chat', () => {
   // Map of sessionId -> messages array
@@ -82,19 +82,40 @@ export const useChatStore = defineStore('chat', () => {
     })
 
     try {
-      const response = await opencodeApi.sendMessage(sessionId, prompt, {
-        provider_id: selectedProvider.value,
-        model_id: selectedModel.value
-      })
+      // Use backend API for chat
+      const response = await backendApi.sendMessage(sessionId, prompt)
 
-      // Reload messages from API to get the complete response with all details
-      await loadMessages(sessionId)
+      // Add assistant response
+      if (response.content) {
+        addMessage(sessionId, {
+          info: {
+            role: 'assistant',
+            time: { created: Date.now() }
+          },
+          parts: [{
+            type: 'text',
+            text: response.content
+          }]
+        })
+      }
+
+      // Messages are now managed locally, no need to reload from API
     } catch (e) {
       error.value = 'Failed to send message'
       console.error(e)
 
-      // Reload messages to show any partial updates
-      await loadMessages(sessionId)
+      // Add error message
+      addMessage(sessionId, {
+        info: {
+          role: 'assistant',
+          time: { created: Date.now() }
+        },
+        parts: [{
+          type: 'text',
+          text: `Error: ${e.response?.data?.detail || e.message || 'Failed to send message'}`
+        }]
+      })
+      
       throw e
     } finally {
       loading.value = false
@@ -131,24 +152,25 @@ export const useChatStore = defineStore('chat', () => {
     })
 
     try {
-      await opencodeApi.streamMessage(sessionId, prompt, (chunk) => {
-        if (chunk.content) {
-          const messages = messagesBySession.value[sessionId]
-          const lastMsg = messages[messages.length - 1]
-          if (lastMsg.parts && lastMsg.parts.length > 0) {
-            lastMsg.parts[0].text += chunk.content
-          }
-        }
-      })
-
-      // Reload messages from API to get the complete data
-      await loadMessages(sessionId)
+      // Currently streaming is not supported with backend API
+      // Use regular sendMessage instead
+      throw new Error('Streaming is not currently supported. Please use regular message sending.')
     } catch (e) {
       error.value = 'Failed to stream message'
       console.error(e)
       
-      // Reload messages to show any partial updates
-      await loadMessages(sessionId)
+      // Add error message
+      addMessage(sessionId, {
+        info: {
+          role: 'assistant',
+          time: { created: Date.now() }
+        },
+        parts: [{
+          type: 'text',
+          text: `Error: ${e.message}`
+        }]
+      })
+      
       throw e
     } finally {
       loading.value = false
@@ -166,36 +188,63 @@ export const useChatStore = defineStore('chat', () => {
 
   async function loadMessages(sessionId) {
     try {
-      const messages = await opencodeApi.getSessionMessages(sessionId)
-      messagesBySession.value[sessionId] = messages.map(msg => ({
-        ...msg,
-        timestamp: msg.timestamp ? new Date(msg.timestamp).toISOString() : new Date().toISOString()
-      }))
+      // Messages are now stored locally in messagesBySession
+      // No need to fetch from agent since we manage them via backend API
+      if (!messagesBySession.value[sessionId]) {
+        messagesBySession.value[sessionId] = []
+      }
     } catch (e) {
       console.error('Failed to load messages:', e)
-      // Fallback to local storage if API fails
+      // Ensure messages array exists
       if (!messagesBySession.value[sessionId]) {
         messagesBySession.value[sessionId] = []
       }
     }
   }
 
+  function initializeSession(sessionId) {
+    // Initialize empty message storage for a new session
+    if (!messagesBySession.value[sessionId]) {
+      messagesBySession.value[sessionId] = []
+    }
+  }
+
   async function fetchModels() {
     modelsLoading.value = true
     try {
-      const data = await opencodeApi.getModels()
-      availableModels.value = data
+      // Fetch models from backend API
+      const data = await backendApi.getModels()
       
-      // Set default provider and model if available
-      if (data.default) {
-        const firstProvider = Object.keys(data.default)[0]
-        if (firstProvider) {
-          selectedProvider.value = firstProvider
-          selectedModel.value = data.default[firstProvider]
+      if (data && data.providers) {
+        availableModels.value = data
+        
+        // Set default provider and model if available
+        if (data.default) {
+          const firstProvider = Object.keys(data.default)[0]
+          if (firstProvider) {
+            selectedProvider.value = firstProvider
+            selectedModel.value = data.default[firstProvider]
+          }
         }
       }
     } catch (e) {
       console.error('Failed to fetch models:', e)
+      // Set default models as fallback
+      availableModels.value = {
+        providers: [
+          {
+            id: 'github-copilot',
+            name: 'GitHub Copilot',
+            models: [
+              { id: 'gpt-5-mini', name: 'GPT-5 Mini' },
+              { id: 'gpt-5', name: 'GPT-5' }
+            ]
+          }
+        ],
+        default: {
+          'github-copilot': 'gpt-5-mini'
+        }
+      }
     } finally {
       modelsLoading.value = false
     }
@@ -222,6 +271,7 @@ export const useChatStore = defineStore('chat', () => {
     clearMessages,
     deleteSessionMessages,
     loadMessages,
+    initializeSession,
     fetchModels,
     setModel
   }

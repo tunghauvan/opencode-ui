@@ -19,7 +19,7 @@ def test_full_workflow():
     
     # Step 1: Create new session
     print("\n1. Creating new session...")
-    session_id = str(uuid.uuid4())[:8]
+    session_id = f"ses{str(uuid.uuid4())[:5]}"
     
     create_response = requests.post(
         f'{API_BASE_URL}/api/backend/sessions',
@@ -48,7 +48,7 @@ def test_full_workflow():
     print(f"\n2. Starting container for session {session_id}...")
     start_response = requests.post(
         f'{API_BASE_URL}/api/backend/sessions/{session_id}/container/start',
-        json={'image': 'python:3.9-slim'},
+        json={'image': 'opencode-ui-opencode-agent:latest', 'is_agent': True},
         cookies={'user_id': USER_ID},
         timeout=60
     )
@@ -61,6 +61,10 @@ def test_full_workflow():
     else:
         print(f"❌ Failed to start container: {start_response.text}")
         return False
+    
+    # Wait for agent container to be ready
+    print("   Waiting for agent container to be ready...")
+    time.sleep(10)
     
     # Step 3: Get container status
     print(f"\n3. Checking container status...")
@@ -97,8 +101,30 @@ def test_full_workflow():
     else:
         print(f"❌ Failed to get session: {get_response.text}")
     
-    # Step 5: Stop container
-    print(f"\n5. Stopping container...")
+    # Step 5: Send message and get AI response
+    print(f"\n5. Sending test message to session...")
+    message_response = requests.post(
+        f'{API_BASE_URL}/api/backend/sessions/{session_id}/chat',
+        json={'prompt': 'Hello, what is 2+2?'},
+        cookies={'user_id': USER_ID},
+        timeout=30
+    )
+    
+    if message_response.status_code == 200:
+        message_data = message_response.json()
+        print(f"✅ Message sent successfully")
+        print(f"   Prompt: {message_data.get('prompt', 'N/A')}")
+        print(f"   Status: {message_data.get('status', 'N/A')}")
+        if message_data.get('content'):
+            print(f"   AI Response: {message_data['content'][:200]}...")
+        print(f"   Container Status: {message_data.get('container_status', 'N/A')}")
+    else:
+        print(f"❌ Failed to send message: {message_response.text}")
+        print(f"   Status code: {message_response.status_code}")
+        return False
+
+    # Step 6: Stop container
+    print(f"\n6. Stopping container...")
     stop_response = requests.post(
         f'{API_BASE_URL}/api/backend/sessions/{session_id}/container/stop',
         cookies={'user_id': USER_ID},
@@ -110,8 +136,8 @@ def test_full_workflow():
     else:
         print(f"⚠️  Failed to stop container: {stop_response.text}")
     
-    # Step 6: Delete session
-    print(f"\n6. Deleting session...")
+    # Step 7: Delete session
+    print(f"\n7. Deleting session...")
     delete_response = requests.delete(
         f'{API_BASE_URL}/api/backend/sessions/{session_id}',
         cookies={'user_id': USER_ID},

@@ -37,6 +37,11 @@ export const opencodeApi = {
     return response.data
   },
 
+  async deleteSession(sessionId) {
+    const response = await api.delete(`/sessions/${sessionId}`)
+    return response.data
+  },
+
   // Chat
   async sendMessage(sessionId, prompt, options = {}) {
     const { provider_id = 'github-copilot', model_id = 'gpt-5-mini' } = options
@@ -90,6 +95,87 @@ export const opencodeApi = {
         }
       }
     }
+  }
+}
+
+// Backend API for session and container management
+export const backendApi = {
+  // Session management
+  async listSessions(filters = {}) {
+    const params = new URLSearchParams()
+    if (filters.status) params.append('status', filters.status)
+    if (filters.is_active !== undefined) params.append('is_active', filters.is_active)
+    
+    const response = await api.get(`/backend/sessions?${params}`)
+    return response.data
+  },
+
+  async createSession(sessionData = {}) {
+    const response = await api.post('/backend/sessions', sessionData)
+    return response.data
+  },
+
+  async getSession(sessionId) {
+    const response = await api.get(`/backend/sessions/${sessionId}`)
+    return response.data
+  },
+
+  async updateSession(sessionId, data) {
+    const response = await api.put(`/backend/sessions/${sessionId}`, data)
+    return response.data
+  },
+
+  async deleteSession(sessionId) {
+    const response = await api.delete(`/backend/sessions/${sessionId}`)
+    return response.data
+  },
+
+  // Container management
+  async startContainer(sessionId, containerConfig) {
+    const response = await api.post(`/backend/sessions/${sessionId}/container/start`, containerConfig)
+    return response.data
+  },
+
+  async stopContainer(sessionId) {
+    const response = await api.post(`/backend/sessions/${sessionId}/container/stop`)
+    return response.data
+  },
+
+  async getContainerStatus(sessionId) {
+    const response = await api.get(`/backend/sessions/${sessionId}/container/status`)
+    return response.data
+  },
+
+  async getContainerLogs(sessionId, tail = 100) {
+    const response = await api.get(`/backend/sessions/${sessionId}/container/logs?tail=${tail}`)
+    return response.data
+  },
+
+  // Chat via backend
+  async sendMessage(sessionId, prompt) {
+    const response = await api.post(`/backend/sessions/${sessionId}/chat`, { prompt })
+    return response.data
+  },
+
+  // Analytics
+  async getSessionStats() {
+    const response = await api.get('/backend/sessions/stats/overview')
+    return response.data
+  },
+
+  async getSessionTimeline(sessionId) {
+    const response = await api.get(`/backend/sessions/${sessionId}/timeline`)
+    return response.data
+  },
+
+  async getRecentSessions(limit = 10) {
+    const response = await api.get(`/backend/sessions/recent?limit=${limit}`)
+    return response.data
+  },
+
+  async getModels() {
+    const response = await api.get('/models')
+    return response.data
   }
 }
 

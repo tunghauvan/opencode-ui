@@ -33,7 +33,7 @@ class SessionManagementService:
         # Generate session_id if not provided
         if not session_id:
             import uuid
-            session_id = str(uuid.uuid4())[:8]
+            session_id = f"ses{str(uuid.uuid4())[:5]}"
         
         # Check if session already exists
         existing = self.db.query(Session).filter(
@@ -135,7 +135,8 @@ class SessionManagementService:
         description: Optional[str] = None,
         status: Optional[str] = None,
         auth_data: Optional[Dict[str, Any]] = None,
-        environment_vars: Optional[Dict[str, str]] = None
+        environment_vars: Optional[Dict[str, str]] = None,
+        base_url: Optional[str] = None
     ) -> Session:
         """Update session metadata and configuration"""
         session = self.get_session(user, session_id)
@@ -150,6 +151,8 @@ class SessionManagementService:
             session.auth_data = json.dumps(auth_data)
         if environment_vars is not None:
             session.environment_vars = json.dumps(environment_vars)
+        if base_url is not None:
+            session.base_url = base_url
 
         session.updated_at = datetime.utcnow()
 
@@ -313,6 +316,14 @@ class ContainerManagementService:
                     result.get("container_id"),
                     "running"
                 )
+
+                # Set base_url for agent containers
+                if is_agent:
+                    session_service.update_session(
+                        user,
+                        session_id,
+                        base_url=f"http://agent_{session_id}:4096"
+                    )
 
                 return result
         except Exception as e:

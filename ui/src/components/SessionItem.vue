@@ -22,7 +22,12 @@
             {{ sessionTitle }}
           </div>
           <div class="text-xs mt-0 flex items-center gap-1.5" :class="active ? 'text-white/80' : 'text-gray-500'">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <!-- Container status indicator -->
+            <span v-if="containerStatus" class="flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full" :class="containerStatusClass"></span>
+              <span class="text-xs">{{ containerStatusText }}</span>
+            </span>
+            <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             {{ formattedDate }}
@@ -61,7 +66,25 @@ const props = defineProps({
 defineEmits(['click', 'delete'])
 
 const sessionTitle = computed(() => {
-  return props.session.title || props.session.name || `Session ${props.session.id.slice(0, 8)}`
+  return props.session.title || props.session.name || `Session ${(props.session.session_id || props.session.id).slice(0, 8)}`
+})
+
+const containerStatus = computed(() => {
+  return props.session.container_status
+})
+
+const containerStatusClass = computed(() => {
+  const status = props.session.container_status
+  if (status === 'running') return 'bg-green-500'
+  if (status === 'stopped' || status === 'exited') return 'bg-red-500'
+  if (status === 'starting' || status === 'created') return 'bg-yellow-500'
+  return 'bg-gray-400'
+})
+
+const containerStatusText = computed(() => {
+  const status = props.session.container_status
+  if (!status) return ''
+  return status.charAt(0).toUpperCase() + status.slice(1)
 })
 
 const formattedDate = computed(() => {
