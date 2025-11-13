@@ -1,34 +1,77 @@
 opencode-ui/
 ├── .github/
 │   └── copilot-instructions.md
+├── README.md
 ├── app/
 │   ├── __init__.py
+│   ├── agent-controller.py
 │   ├── main.py
 │   ├── __pycache__/
+│   └── backend/
+│       ├── __init__.py
+│       ├── apis.py
+│       ├── routes.py
+│       └── utils.py
+│       └── __pycache__/
 │   └── core/
 │       ├── __init__.py
 │       ├── config.py
 │       ├── database.py
+│       ├── docker_ops.py
 │       ├── github_oauth.py
 │       ├── models.py
 │       ├── opencode_client.py
 │       ├── schemas.py
+│       ├── session_cleanup_worker.py
+│       ├── session_config.py
+│       ├── session_management.py
+│       ├── session_ops.py
 │       └── __pycache__/
+├── check_db_tables.py
 ├── cli_tester.py
 ├── cli.py
+├── config/
+│   ├── pyproject.toml
+│   └── requirements.txt
 ├── data/
-│   └── db.sqlite3
+│   ├── db.sqlite3
+│   ├── db.sqlite3.backup
+├── docker/
+│   ├── Dockerfile
+│   ├── Dockerfile.backend
+│   └── Dockerfile.frontend
 ├── docker-compose.yml
-├── Dockerfile
-├── Dockerfile.backend
-├── Dockerfile.frontend
+├── docs/
+│   ├── FEATURES.md
+│   ├── project_structure.txt
+│   ├── QUICK_START.md
 ├── logs/
 │   ├── nginx/
 │   └── squid/
-├── project_structure.txt
-├── pyproject.toml
-├── README.md
-├── requirements.txt
+├── scripts/
+│   ├── check_db.py
+│   ├── check_schema.py
+│   ├── check_session_container.py
+│   ├── check_tables.py
+│   ├── check_users.py
+│   ├── cli_tester.py
+│   ├── cli.py
+│   ├── create_sessions_table.py
+│   ├── create_test_user.py
+│   ├── init_db_host.py
+│   ├── init_db.py
+│   ├── migrate_db.py
+│   ├── session_utils.py
+│   ├── test_agent.py
+│   ├── test_backend_chat.py
+│   ├── test_db_query.py
+│   ├── test_docker.py
+│   ├── test_e2e_chat_routing.py
+│   ├── test_integration.py
+│   ├── test_opencode_api.py
+│   ├── test_session_api.py
+│   ├── test_session_cleanup.py
+│   ├── test_user.py
 ├── static/
 │   ├── css/
 │   │   └── chat.css
@@ -54,15 +97,20 @@ opencode-ui/
 │       │   ├── ModelSelector.vue
 │       │   ├── ModelSelectorModal.vue
 │       │   ├── SessionItem.vue
-│       │   └── SessionSidebar.vue
+│       │   ├── SessionSidebar.vue
+│       │   ├── SettingsDialog.vue
+│       │   └── UserProfile.vue
 │       ├── router/
 │       │   └── index.js
 │       ├── services/
 │       │   └── api.js
 │       ├── stores/
 │       │   ├── chat.js
-│       │   └── session.js
+│       │   ├── session.js
+│       │   └── user.js
 │       └── views/
+│           ├── AgentAuthView.vue
 │           ├── ChatView.vue
-│           └── LoginView.vue
+│           ├── LoginView.vue
+│           └── SettingsView.vue
 └── __pycache__/
