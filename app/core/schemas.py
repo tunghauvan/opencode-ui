@@ -47,7 +47,7 @@ class TokenRefreshResponse(BaseModel):
 
 class SessionCreateRequest(BaseModel):
     """Session creation request schema"""
-    session_id: str
+    session_id: Optional[str] = None
     name: Optional[str] = None
     description: Optional[str] = None
 

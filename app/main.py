@@ -71,9 +71,21 @@ class CreateSessionRequest(BaseModel):
     title: Optional[str] = None
 
 class ChatRequest(BaseModel):
-    model: Model
+    prompt: Optional[str] = None  # New format - simple prompt
+    model: Optional[Model] = None
     agent: str = "build"
-    parts: List[Dict[str, Any]]
+    parts: Optional[List[Dict[str, Any]]] = None  # Legacy format
+    
+    def get_prompt(self) -> str:
+        """Get prompt from either new or legacy format"""
+        if self.prompt:
+            return self.prompt
+        if self.parts and len(self.parts) > 0:
+            # Extract text from first text part
+            for part in self.parts:
+                if isinstance(part, dict) and part.get('type') == 'text':
+                    return part.get('text', '')
+        return ""
 
 class SessionResponse(BaseModel):
     id: str
@@ -242,7 +254,7 @@ async def delete_session(session_id: str, current_user: User = Depends(get_curre
 async def chat(session_id: str, request: ChatRequest, current_user: User = Depends(get_current_user_dependency), db: Session = Depends(get_db)):
     """Send a chat message"""
     try:
-        # Check if this is a database session with custom base_url
+        # Check if this is a database session
         db_session = db.query(SessionModel).filter(
             SessionModel.session_id == session_id,
             SessionModel.user_id == current_user.id
@@ -251,82 +263,50 @@ async def chat(session_id: str, request: ChatRequest, current_user: User = Depen
         if not db_session:
             raise HTTPException(status_code=404, detail="Session not found")
         
-        # All sessions must now be agent-based (no fallback to shared service)
-        if not db_session.base_url:
+        # Session must have container ID
+        if not db_session.container_id:
             raise HTTPException(
                 status_code=400, 
-                detail="Session is not properly configured. Please create a new session with an agent."
+                detail="Session has no running container"
             )
         
-        # Use agent-specific OpenCode service
-        from core.opencode_client import get_opencode_service
-        agent_service = get_opencode_service(base_url=db_session.base_url)
+        # Get the prompt from either new or legacy format
+        prompt = request.get_prompt()
         
-        # For agent containers, we need to create an OpenCode session
-        # Try to create a session in the agent
+        if not prompt:
+            raise HTTPException(status_code=400, detail="No prompt provided")
+        
+        # Forward the message directly to the agent container
+        import requests as sync_requests
+        base_url = db_session.base_url or f"http://agent_{session_id}:4096"
+        
         try:
-            session_response = agent_service.create_session(title=db_session.name or f"Session {session_id[:8]}")
-            if isinstance(session_response, dict) and 'id' in session_response:
-                opencode_session_id = session_response['id']
-            else:
-                # Fallback to using the database session ID
-                opencode_session_id = session_id
-        except Exception as create_error:
-            import logging
-            logging.warning(f"Could not create OpenCode session: {create_error}")
-            # Fallback to using the database session ID
-            opencode_session_id = session_id
-        
-        response = agent_service.send_prompt(
-            opencode_session_id, 
-            request.parts,
-            model=request.model
-        )
-        
-        # Update session last_activity
-        db_session.last_activity = datetime.utcnow()
-        db.commit()
-        
-        # Extract text content from OpenCode API response
-        content = ""
-        if isinstance(response, dict):
-            # Handle OpenCode API response format with 'parts'
-            if 'parts' in response and isinstance(response['parts'], list):
-                for part in response['parts']:
-                    if isinstance(part, dict) and part.get('type') == 'text' and 'text' in part:
-                        content += part['text']
-            # Fallback to other possible fields
-            elif 'content' in response:
-                content = response['content']
-            elif 'message' in response:
-                content = response['message']
-            else:
-                content = str(response)
-        else:
-            # Handle object responses
-            if hasattr(response, 'parts') and response.parts:
-                for part in response.parts:
-                    if hasattr(part, 'type') and part.type == 'text' and hasattr(part, 'text'):
-                        content += part.text
-            elif hasattr(response, 'content'):
-                content = response.content
-            elif hasattr(response, 'message'):
-                content = response.message
-            else:
-                content = str(response)
-        
-        return {
-            "content": content.strip(),
-            "session_id": session_id
-        }
+            response = sync_requests.post(
+                f"{base_url}/session/{session_id}/chat",
+                json={"prompt": prompt},
+                timeout=30
+            )
+            
+            # Update session last_activity
+            db_session.last_activity = datetime.utcnow()
+            db.commit()
+            
+            # Return the response
+            return {
+                "content": f"Message sent to container (status: {response.status_code})",
+                "session_id": session_id,
+                "container_status": response.status_code
+            }
+        except sync_requests.exceptions.RequestException as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to reach container at {base_url}: {str(e)}"
+            )
     except HTTPException:
         raise
     except Exception as e:
         import logging
         logging.error(f"Error sending chat message for session {session_id}: {str(e)}")
-        # If the agent container is not available, return a helpful message
-        if "Name or service not known" in str(e) or "Connection refused" in str(e):
-            raise HTTPException(status_code=503, detail="Agent service is currently unavailable. Please try again later or create a new session.")
         raise HTTPException(status_code=500, detail=f"Failed to send message: {str(e)}")
 
 @app.get("/api/sessions/{session_id}/messages")

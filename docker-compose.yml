@@ -43,8 +43,10 @@ services:
       - ./app:/app/app
       - ./config/requirements.txt:/app/requirements.txt
       - ./.env:/app/.env
+      - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
+      - DATABASE_URL=sqlite:///./data/db.sqlite3
       - AGENT_CONTROLLER_PORT=8001
       - AGENT_SERVICE_SECRET=default-secret-change-in-production
       - PYTHONPATH=/app

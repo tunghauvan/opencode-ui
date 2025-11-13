@@ -23,13 +23,18 @@ class SessionManagementService:
     def create_session(
         self,
         user: User,
-        session_id: str,
+        session_id: Optional[str] = None,
         name: Optional[str] = None,
         description: Optional[str] = None,
         auth_data: Optional[Dict[str, Any]] = None,
         environment_vars: Optional[Dict[str, str]] = None
     ) -> Session:
         """Create a new session for a user"""
+        # Generate session_id if not provided
+        if not session_id:
+            import uuid
+            session_id = str(uuid.uuid4())[:8]
+        
         # Check if session already exists
         existing = self.db.query(Session).filter(
             Session.session_id == session_id,
@@ -43,7 +48,7 @@ class SessionManagementService:
         session = Session(
             session_id=session_id,
             user_id=user.id,
-            name=name,
+            name=name or f"Session {session_id}",
             description=description,
             status="active",
             is_active=True,
@@ -56,6 +61,36 @@ class SessionManagementService:
         self.db.add(session)
         self.db.commit()
         self.db.refresh(session)
+
+        # Also create session in agent controller
+        try:
+            import httpx
+            import asyncio
+            
+            async def create_agent_session():
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        "http://agent-controller:8001/sessions",
+                        json={"session_id": session_id, "github_token": None},
+                        headers={"X-Service-Secret": settings.AGENT_SERVICE_SECRET},
+                        timeout=10.0
+                    )
+                    if response.status_code not in [200, 201]:
+                        print(f"Warning: Failed to create session in agent controller: {response.text}")
+            
+            # Run in background since this is a sync method
+            import threading
+            def run_async():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(create_agent_session())
+                loop.close()
+            
+            thread = threading.Thread(target=run_async, daemon=True)
+            thread.start()
+            
+        except Exception as e:
+            print(f"Warning: Could not create session in agent controller: {e}")
 
         return session
 
@@ -231,6 +266,7 @@ class ContainerManagementService:
         session_id: str,
         image: str,
         environment: Optional[Dict[str, str]] = None,
+        is_agent: bool = False,
         session_service: Optional[SessionManagementService] = None
     ) -> Dict[str, Any]:
         """Start a Docker container for a session via Agent Controller"""
@@ -242,10 +278,28 @@ class ContainerManagementService:
 
         try:
             async with httpx.AsyncClient() as client:
-                # Call agent-controller to start container
+                # First, ensure session exists in agent controller
+                try:
+                    check_response = await client.get(
+                        f"{self.agent_controller_url}/sessions/{session_id}",
+                        headers={"X-Service-Secret": settings.AGENT_SERVICE_SECRET},
+                        timeout=5.0
+                    )
+                except:
+                    # Session doesn't exist, create it
+                    create_response = await client.post(
+                        f"{self.agent_controller_url}/sessions",
+                        json={"session_id": session_id, "github_token": None},
+                        headers={"X-Service-Secret": settings.AGENT_SERVICE_SECRET},
+                        timeout=10.0
+                    )
+                    if create_response.status_code not in [200, 201]:
+                        print(f"Warning: Failed to create session in agent controller: {create_response.text}")
+
+                # Now run the container
                 response = await client.post(
-                    f"{self.agent_controller_url}/api/sessions/{session_id}/container/start",
-                    json={"image": image, "environment": environment or {}},
+                    f"{self.agent_controller_url}/sessions/{session_id}/run",
+                    json={"image": image, "environment": environment or {}, "is_agent": is_agent},
                     headers={"X-Service-Secret": settings.AGENT_SERVICE_SECRET},
                     timeout=30.0
                 )
@@ -284,7 +338,7 @@ class ContainerManagementService:
             async with httpx.AsyncClient() as client:
                 # Call agent-controller to stop container
                 response = await client.post(
-                    f"{self.agent_controller_url}/api/sessions/{session_id}/container/stop",
+                    f"{self.agent_controller_url}/sessions/{session_id}/stop",
                     headers={"X-Service-Secret": settings.AGENT_SERVICE_SECRET},
                     timeout=30.0
                 )
@@ -323,7 +377,7 @@ class ContainerManagementService:
             async with httpx.AsyncClient() as client:
                 # Call agent-controller to get logs
                 response = await client.get(
-                    f"{self.agent_controller_url}/api/sessions/{session_id}/container/logs",
+                    f"{self.agent_controller_url}/sessions/{session_id}/logs",
                     params={"tail": tail},
                     headers={"X-Service-Secret": settings.AGENT_SERVICE_SECRET},
                     timeout=30.0
@@ -352,7 +406,7 @@ class ContainerManagementService:
             async with httpx.AsyncClient() as client:
                 # Call agent-controller to get status
                 response = await client.get(
-                    f"{self.agent_controller_url}/api/sessions/{session_id}/container/status",
+                    f"{self.agent_controller_url}/sessions/{session_id}/status",
                     headers={"X-Service-Secret": settings.AGENT_SERVICE_SECRET},
                     timeout=30.0
                 )

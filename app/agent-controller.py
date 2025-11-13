@@ -24,6 +24,7 @@ from .core.docker_ops import (
     run_session_container as run_container_in_docker,
     get_container_logs
 )
+from .core.database import init_db
 from .core.session_ops import (
     create_session as create_session_in_db,
     get_session as get_session_from_db,
@@ -91,6 +92,7 @@ class SessionResponse(BaseModel):
 class ContainerRunRequest(BaseModel):
     image: str = Field(DEFAULT_IMAGE, description="Docker image to run")
     environment: Optional[Dict[str, str]] = Field({}, description="Environment variables")
+    is_agent: bool = Field(False, description="Whether this is an agent container")
 
 class SessionListResponse(BaseModel):
     sessions: List[Dict[str, Any]]
@@ -99,6 +101,7 @@ class SessionListResponse(BaseModel):
 async def startup_event():
     """Initialize on startup"""
     ensure_volume_exists()
+    init_db()  # Initialize database tables
 
 @app.get("/health")
 async def health_check():
@@ -286,7 +289,7 @@ async def run_session_container(session_id: str, request: ContainerRunRequest, b
             background_tasks.add_task(cleanup_container, session_data["container_id"])
 
         # Run container
-        container_id = run_container_in_docker(session_id, request.image, request.environment or {})
+        container_id = run_container_in_docker(session_id, request.image, request.environment or {}, is_agent=request.is_agent)
 
         # Update session data
         update_session_container_in_db(session_id, container_id, "running")
@@ -336,6 +339,39 @@ async def get_session_logs(session_id: str, tail: int = 100):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get logs: {str(e)}")
+
+
+@app.get("/sessions/{session_id}/status", dependencies=[Depends(verify_service_secret)])
+async def get_session_status(session_id: str):
+    """Get session and container status"""
+    try:
+        session_data = get_session_from_db(session_id)
+        
+        status_info = {
+            "session_id": session_id,
+            "session_status": "exists",
+            "container_id": session_data.get("container_id"),
+            "container_status": session_data.get("container_status", "unknown")
+        }
+        
+        # If we have a container_id, check if it's actually running
+        if session_data.get("container_id"):
+            try:
+                container = docker_client.containers.get(session_data["container_id"])
+                status_info["container_status"] = container.status
+                status_info["container_running"] = container.status == "running"
+            except docker.errors.NotFound:
+                status_info["container_status"] = "not_found"
+                status_info["container_running"] = False
+            except Exception as e:
+                status_info["container_error"] = str(e)
+        
+        return status_info
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)

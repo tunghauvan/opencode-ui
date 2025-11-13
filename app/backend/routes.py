@@ -19,6 +19,15 @@ from core.schemas import (
 class StartContainerRequest(BaseModel):
     image: str
     environment: Optional[Dict[str, str]] = None
+    is_agent: bool = False
+
+class ChatRequest(BaseModel):
+    prompt: str = ""
+    message: Optional[str] = None  # Alternative field name
+    
+    def get_prompt(self) -> str:
+        """Get prompt from either prompt or message field"""
+        return self.prompt or self.message or ""
 from backend.apis import (
     SessionManagementService,
     ContainerManagementService,
@@ -36,9 +45,9 @@ backend_router = APIRouter(prefix="/api/backend", tags=["backend"])
 
 
 # Helper dependency to get current user
-async def get_current_user(request, db: DBSession = Depends(get_db)) -> User:
+async def get_current_user(http_request: Request, db: DBSession = Depends(get_db)) -> User:
     """Get current authenticated user"""
-    user_id = request.cookies.get('user_id')
+    user_id = http_request.cookies.get('user_id')
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
     
@@ -59,8 +68,8 @@ async def create_session(
 ):
     """Create a new session"""
     try:
-        # Validate session_id
-        if not SessionValidator.validate_session_id(request.session_id):
+        # Validate session_id if provided
+        if request.session_id and not SessionValidator.validate_session_id(request.session_id):
             raise HTTPException(status_code=400, detail="Invalid session_id format")
 
         service = SessionManagementService(db)
@@ -168,14 +177,23 @@ async def delete_session(
 @backend_router.post("/sessions/{session_id}/container/start")
 async def start_container(
     session_id: str,
-    request: StartContainerRequest,
-    current_user: User = Depends(get_current_user),
+    container_request: StartContainerRequest,
+    request: Request,
     db: DBSession = Depends(get_db)
 ):
     """Start a Docker container for a session via Agent Controller"""
+    # Get current user inline
+    user_id = request.cookies.get('user_id')
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    current_user = db.query(User).filter(User.id == user_id).first()
+    if not current_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
     try:
         # Validate image name
-        if not ContainerValidator.validate_image_name(request.image):
+        if not ContainerValidator.validate_image_name(container_request.image):
             raise HTTPException(status_code=400, detail="Invalid image name")
 
         session_service = SessionManagementService(db)
@@ -184,8 +202,9 @@ async def start_container(
         result = await container_service.start_session_container(
             user=current_user,
             session_id=session_id,
-            image=request.image,
-            environment=request.environment,
+            image=container_request.image,
+            environment=container_request.environment,
+            is_agent=container_request.is_agent,
             session_service=session_service
         )
 
@@ -272,6 +291,61 @@ async def get_container_status(
     except Exception as e:
         error_response = ErrorHandler.handle_error(e)
         raise HTTPException(status_code=error_response["status_code"], detail=error_response["error"])
+
+
+@backend_router.post("/sessions/{session_id}/chat")
+async def chat_with_session(
+    session_id: str,
+    request: ChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """Send a chat message to a session's container"""
+    try:
+        print(f"\n=== CHAT ENDPOINT CALLED ===")
+        print(f"Session ID: {session_id}")
+        print(f"Request: {request}")
+        
+        session_service = SessionManagementService(db)
+        session = session_service.get_session(current_user, session_id)
+        
+        print(f"Session found: {session.session_id}")
+        print(f"Container ID: {session.container_id}")
+        
+        if not session.container_id:
+            raise HTTPException(status_code=400, detail="Session has no running container")
+        
+        base_url = session.base_url or f"http://agent_{session_id}:4096"
+        prompt = request.get_prompt()
+        
+        print(f"Base URL: {base_url}")
+        print(f"Prompt: {prompt}")
+        
+        # Test import
+        import requests
+        print(f"Requests imported: {requests}")
+        
+        response = requests.post(
+            f"{base_url}/session/{session_id}/chat",
+            json={"prompt": prompt},
+            timeout=30
+        )
+        print(f"Response: {response.status_code}")
+        
+        return {
+            "session_id": session_id,
+            "prompt": prompt,
+            "status": "sent",
+            "container_status": response.status_code
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_msg = traceback.format_exc()
+        print(f"ERROR: {error_msg}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Analytics Routes
