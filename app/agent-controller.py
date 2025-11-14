@@ -284,9 +284,22 @@ async def run_session_container(session_id: str, request: ContainerRunRequest, b
     try:
         session_data = get_session_from_db(session_id)
 
-        # Stop existing container if any
+        # Stop and remove existing container synchronously if any
         if session_data.get("container_id"):
-            background_tasks.add_task(cleanup_container, session_data["container_id"])
+            try:
+                print(f"Attempting to cleanup container: {session_data['container_id']}")
+                cleanup_container(session_data["container_id"])
+                print(f"Successfully cleaned up existing container: {session_data['container_id']}")
+            except Exception as e:
+                print(f"Warning: Failed to cleanup existing container: {e}")
+                # Try to force remove if regular cleanup failed
+                try:
+                    print(f"Attempting force remove of container: {session_data['container_id']}")
+                    container = docker_client.containers.get(session_data["container_id"])
+                    container.remove(force=True)
+                    print(f"Successfully force removed existing container: {session_data['container_id']}")
+                except Exception as e2:
+                    print(f"Warning: Failed to force remove container: {e2}")
 
         # Run container
         container_id = run_container_in_docker(session_id, request.image, request.environment or {}, is_agent=request.is_agent)
@@ -314,12 +327,24 @@ async def stop_session_container(session_id: str, background_tasks: BackgroundTa
         if not container_id:
             raise HTTPException(status_code=404, detail="No container running for session")
 
-        background_tasks.add_task(cleanup_container, container_id)
+        # Stop and remove container synchronously
+        try:
+            cleanup_container(container_id)
+            print(f"Stopped and removed container: {container_id}")
+        except Exception as e:
+            print(f"Warning: Failed to cleanup container: {e}")
+            # Try force remove
+            try:
+                container = docker_client.containers.get(container_id)
+                container.remove(force=True)
+                print(f"Force removed container: {container_id}")
+            except Exception as e2:
+                print(f"Warning: Failed to force remove container: {e2}")
 
         # Update status
         stop_session_container_in_db(session_id)
 
-        return {"status": "stopping", "session_id": session_id}
+        return {"status": "stopped", "session_id": session_id}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

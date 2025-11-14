@@ -79,11 +79,10 @@ def update_session_container(session_id: str, container_id: str, status: str = "
         session.container_status = status
         session.updated_at = datetime.utcnow()
         
-        # Store OpenCode session ID in environment_vars if provided
+        # Store OpenCode session ID directly in the model
         if opencode_session_id:
-            env_vars = json.loads(session.environment_vars or "{}")
-            env_vars["OPENCODE_SESSION_ID"] = opencode_session_id
-            session.environment_vars = json.dumps(env_vars)
+            session.opencode_session_id = opencode_session_id
+            print(f"Stored OpenCode session ID: {opencode_session_id} for session: {session_id}")
         
         db.commit()
     finally:
@@ -146,5 +145,6 @@ def session_to_dict(session: Session) -> Dict[str, Any]:
         "container_status": session.container_status,
         "container_id": session.container_id,
         "status": session.status,
-        "is_active": session.is_active
+        "is_active": session.is_active,
+        "opencode_session_id": session.opencode_session_id
     }

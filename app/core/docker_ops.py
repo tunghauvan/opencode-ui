@@ -4,6 +4,7 @@ Docker operations for OpenCode Agent Controller
 
 import json
 import docker
+import uuid
 from typing import Optional, Dict, Any
 
 # Docker client
@@ -25,8 +26,6 @@ def ensure_volume_exists() -> None:
 def create_session_folder(session_id: str, github_token: str = None) -> Dict[str, Any]:
     """Create session folder and auth.json in volume"""
     try:
-        folder_path = f"/root/.local/share/opencode/{session_id}"
-
         # Create auth data
         auth_data = {
             "github-copilot": {
@@ -35,11 +34,11 @@ def create_session_folder(session_id: str, github_token: str = None) -> Dict[str
             }
         }
 
-        # Create temp container to write auth.json
+        # Create temp container to write auth.json to the volume
         temp_container = docker_client.containers.run(
             'alpine',
-            command=['sh', '-c', f'mkdir -p {folder_path} && cat > {folder_path}/auth.json << EOF\n{json.dumps(auth_data, indent=2)}\nEOF'],
-            volumes={VOLUME_NAME: {'bind': '/root/.local/share/opencode', 'mode': 'rw'}},
+            command=['sh', '-c', f'mkdir -p /mnt/volume/{session_id} && cat > /mnt/volume/{session_id}/auth.json << EOF\n{json.dumps(auth_data, indent=2)}\nEOF'],
+            volumes={VOLUME_NAME: {'bind': '/mnt/volume', 'mode': 'rw'}},
             detach=True,
             remove=True
         )
@@ -51,11 +50,11 @@ def create_session_folder(session_id: str, github_token: str = None) -> Dict[str
 def get_session_auth_data(session_id: str) -> Optional[Dict[str, Any]]:
     """Get auth data from session folder"""
     try:
-        # Run temp container to read auth.json
+        # Run temp container to read auth.json from volume
         temp_container = docker_client.containers.run(
             'alpine',
-            command=['sh', '-c', f'cat /root/.local/share/opencode/{session_id}/auth.json 2>/dev/null || echo "null"'],
-            volumes={VOLUME_NAME: {'bind': '/root/.local/share/opencode', 'mode': 'ro'}},
+            command=['sh', '-c', f'cat /mnt/volume/{session_id}/auth.json 2>/dev/null || echo "null"'],
+            volumes={VOLUME_NAME: {'bind': '/mnt/volume', 'mode': 'ro'}},
             detach=False,
             remove=True,
             stdout=True
@@ -72,13 +71,11 @@ def get_session_auth_data(session_id: str) -> Optional[Dict[str, Any]]:
 def update_session_auth_data(session_id: str, auth_data: Dict[str, Any]) -> None:
     """Update auth.json in session folder"""
     try:
-        folder_path = f"/root/.local/share/opencode/{session_id}"
-
         # Update auth.json in volume
         temp_container = docker_client.containers.run(
             'alpine',
-            command=['sh', '-c', f'cat > {folder_path}/auth.json << EOF\n{json.dumps(auth_data, indent=2)}\nEOF'],
-            volumes={VOLUME_NAME: {'bind': '/root/.local/share/opencode', 'mode': 'rw'}},
+            command=['sh', '-c', f'cat > /mnt/volume/{session_id}/auth.json << EOF\n{json.dumps(auth_data, indent=2)}\nEOF'],
+            volumes={VOLUME_NAME: {'bind': '/mnt/volume', 'mode': 'rw'}},
             detach=True,
             remove=True
         )
@@ -90,8 +87,8 @@ def remove_session_folder(session_id: str) -> None:
     try:
         docker_client.containers.run(
             'alpine',
-            command=['sh', '-c', f'rm -rf /root/.local/share/opencode/{session_id}'],
-            volumes={VOLUME_NAME: {'bind': '/root/.local/share/opencode', 'mode': 'rw'}},
+            command=['sh', '-c', f'rm -rf /mnt/volume/{session_id}'],
+            volumes={VOLUME_NAME: {'bind': '/mnt/volume', 'mode': 'rw'}},
             detach=True,
             remove=True
         )
@@ -101,12 +98,17 @@ def remove_session_folder(session_id: str) -> None:
 def cleanup_container(container_id: str) -> None:
     """Cleanup container in background"""
     try:
+        print(f"Getting container {container_id} for cleanup")
         container = docker_client.containers.get(container_id)
+        print(f"Stopping container {container_id}")
         container.stop(timeout=10)
+        print(f"Removing container {container_id}")
         container.remove()
         print(f"Cleaned up container: {container_id}")
     except Exception as e:
         print(f"Error cleaning up container {container_id}: {e}")
+        import traceback
+        traceback.print_exc()
 
 def run_session_container(session_id: str, image: str, environment: Dict[str, str], agent_token: Optional[str] = None, is_agent: bool = False) -> str:
     """Run container for session
@@ -124,10 +126,25 @@ def run_session_container(session_id: str, image: str, environment: Dict[str, st
     if is_agent:
         # Agent container: run opencode serve
         entrypoint_script = f'''
-mkdir -p /root/.local/share/opencode
+# Create persistent OpenCode config directory in the main volume
+mkdir -p /mnt/volume/{session_id}/opencode-data
+
+# Remove /root/.local/share/opencode if it exists and create parent directory
+rm -rf /root/.local/share/opencode
+mkdir -p /root/.local/share
+
+# Create symbolic link from OpenCode's expected location to persistent volume
+ln -sf /mnt/volume/{session_id}/opencode-data /root/.local/share/opencode
+
+# Ensure auth.json exists in the persistent location
 if [ -f /mnt/volume/{session_id}/auth.json ]; then
-    cp /mnt/volume/{session_id}/auth.json /root/.local/share/opencode/auth.json
+    cp /mnt/volume/{session_id}/auth.json /mnt/volume/{session_id}/opencode-data/auth.json
 fi
+
+# Verify symlink
+echo "Symlink created: /root/.local/share/opencode -> /mnt/volume/{session_id}/opencode-data"
+ls -la /root/.local/share/
+
 echo "Starting OpenCode agent server for session {session_id}"
 opencode serve --port 4096 --hostname 0.0.0.0 --print-logs
 '''
@@ -145,10 +162,21 @@ opencode serve --port 4096 --hostname 0.0.0.0 --print-logs
     else:
         # Regular session container
         entrypoint_script = f'''
-mkdir -p /root/.local/share/opencode
+# Create persistent OpenCode config directory in the main volume
+mkdir -p /mnt/volume/{session_id}/opencode-data
+
+# Remove /root/.local/share/opencode if it exists and create parent directory
+rm -rf /root/.local/share/opencode
+mkdir -p /root/.local/share
+
+# Create symbolic link from OpenCode's expected location to persistent volume
+ln -sf /mnt/volume/{session_id}/opencode-data /root/.local/share/opencode
+
+# Ensure auth.json exists in the persistent location
 if [ -f /mnt/volume/{session_id}/auth.json ]; then
-    cp /mnt/volume/{session_id}/auth.json /root/.local/share/opencode/auth.json
+    cp /mnt/volume/{session_id}/auth.json /mnt/volume/{session_id}/opencode-data/auth.json
 fi
+
 echo "Session {session_id} container started"
 sleep infinity
 '''
@@ -166,13 +194,18 @@ sleep infinity
     if environment:
         env_vars.update(environment)
 
+    # Volume mounts for persistence
+    volumes = {
+        VOLUME_NAME: {'bind': '/mnt/volume', 'mode': 'rw'}
+    }
+
     # Run container
     container = docker_client.containers.run(
         image,
         detach=True,
         name=container_name,
         environment=env_vars,
-        volumes={VOLUME_NAME: {'bind': '/mnt/volume', 'mode': 'rw'}},
+        volumes=volumes,
         network="opencode-ui_opencode-network" if is_agent else None,  # Join network for agent containers
         ports={'4096/tcp': None} if is_agent else None,  # Expose port 4096 for agent containers
         command=['sh', '-c', entrypoint_script]

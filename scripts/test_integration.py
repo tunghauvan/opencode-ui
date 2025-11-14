@@ -10,11 +10,11 @@ import time
 API_BASE_URL = 'http://localhost:8000'
 USER_ID = '188960770'
 
-def test_full_workflow():
-    """Test complete session lifecycle with container"""
+def test_persistence_workflow():
+    """Test session persistence across container restarts"""
     
     print("=" * 60)
-    print("Testing Session & Container Integration")
+    print("Testing Session Persistence Across Container Restarts")
     print("=" * 60)
     
     # Step 1: Create new session
@@ -25,8 +25,8 @@ def test_full_workflow():
         f'{API_BASE_URL}/api/backend/sessions',
         json={
             'session_id': session_id,
-            'name': f'Integration Test Session {session_id}',
-            'description': 'Testing full integration'
+            'name': f'Persistence Test Session {session_id}',
+            'description': 'Testing data persistence'
         },
         cookies={'user_id': USER_ID},
         timeout=30
@@ -66,25 +66,95 @@ def test_full_workflow():
     print("   Waiting for agent container to be ready...")
     time.sleep(10)
     
-    # Step 3: Get container status
-    print(f"\n3. Checking container status...")
-    status_response = requests.get(
-        f'{API_BASE_URL}/api/backend/sessions/{session_id}/container/status',
+    # Step 3: Send first message and get AI response
+    print(f"\n3. Sending FIRST test message to session...")
+    message_response = requests.post(
+        f'{API_BASE_URL}/api/backend/sessions/{session_id}/chat',
+        json={'prompt': 'Hello, remember that I am testing persistence. What is 5+7?'},
         cookies={'user_id': USER_ID},
-        timeout=10
+        timeout=30
     )
     
-    if status_response.status_code == 200:
-        status_data = status_response.json()
-        print(f"✅ Container status retrieved:")
-        print(f"   Container ID: {status_data.get('container_id', 'N/A')[:12]}...")
-        print(f"   Status: {status_data.get('container_status', 'unknown')}")
-        print(f"   Running: {status_data.get('container_running', False)}")
+    if message_response.status_code == 200:
+        message_data = message_response.json()
+        print(f"✅ First message sent successfully")
+        print(f"   Prompt: {message_data.get('prompt', 'N/A')}")
+        if message_data.get('content'):
+            print(f"   AI Response: {message_data['content'][:200]}...")
+        print(f"   Container Status: {message_data.get('container_status', 'N/A')}")
     else:
-        print(f"⚠️  Failed to get status: {status_response.text}")
+        print(f"❌ Failed to send first message: {message_response.text}")
+        return False
+
+    # Step 4: Stop container (but keep session)
+    print(f"\n4. Stopping container (keeping session)...")
+    stop_response = requests.post(
+        f'{API_BASE_URL}/api/backend/sessions/{session_id}/container/stop',
+        cookies={'user_id': USER_ID},
+        timeout=30
+    )
     
-    # Step 4: Get session details
-    print(f"\n4. Getting session details...")
+    if stop_response.status_code == 200:
+        print(f"✅ Container stopped successfully")
+    else:
+        print(f"⚠️  Failed to stop container: {stop_response.text}")
+    
+    # Wait a bit
+    print("   Waiting 3 seconds...")
+    time.sleep(3)
+    
+    # Step 5: Restart container
+    print(f"\n5. Restarting container for session {session_id}...")
+    restart_response = requests.post(
+        f'{API_BASE_URL}/api/backend/sessions/{session_id}/container/start',
+        json={'image': 'opencode-ui-opencode-agent:latest', 'is_agent': True},
+        cookies={'user_id': USER_ID},
+        timeout=60
+    )
+    
+    if restart_response.status_code == 200:
+        new_container_data = restart_response.json()
+        new_container_id = new_container_data['container_id']
+        print(f"✅ Container restarted: {new_container_id[:12]}...")
+        print(f"   Status: {new_container_data['status']}")
+        if new_container_id != container_id:
+            print(f"   Note: New container ID (old: {container_id[:12]}...)")
+    else:
+        print(f"❌ Failed to restart container: {restart_response.text}")
+        return False
+    
+    # Wait for agent container to be ready again
+    print("   Waiting for restarted container to be ready...")
+    time.sleep(10)
+    
+    # Step 6: Send second message to test persistence
+    print(f"\n6. Sending SECOND test message to check persistence...")
+    message2_response = requests.post(
+        f'{API_BASE_URL}/api/backend/sessions/{session_id}/chat',
+        json={'prompt': 'Do you remember our previous conversation? What was the math question I asked?'},
+        cookies={'user_id': USER_ID},
+        timeout=30
+    )
+    
+    if message2_response.status_code == 200:
+        message2_data = message2_response.json()
+        print(f"✅ Second message sent successfully")
+        print(f"   Prompt: {message2_data.get('prompt', 'N/A')}")
+        if message2_data.get('content'):
+            print(f"   AI Response: {message2_data['content'][:300]}...")
+            # Check if AI remembers the previous conversation
+            content_lower = message2_data['content'].lower()
+            if '5+7' in content_lower or '12' in content_lower or 'persistence' in content_lower:
+                print(f"   🎉 SUCCESS: AI remembers previous conversation!")
+            else:
+                print(f"   ⚠️  WARNING: AI may not remember previous conversation")
+        print(f"   Container Status: {message2_data.get('container_status', 'N/A')}")
+    else:
+        print(f"❌ Failed to send second message: {message2_response.text}")
+        return False
+
+    # Step 7: Check session details
+    print(f"\n7. Checking final session details...")
     get_response = requests.get(
         f'{API_BASE_URL}/api/backend/sessions/{session_id}',
         cookies={'user_id': USER_ID},
@@ -101,43 +171,8 @@ def test_full_workflow():
     else:
         print(f"❌ Failed to get session: {get_response.text}")
     
-    # Step 5: Send message and get AI response
-    print(f"\n5. Sending test message to session...")
-    message_response = requests.post(
-        f'{API_BASE_URL}/api/backend/sessions/{session_id}/chat',
-        json={'prompt': 'Hello, what is 2+2?'},
-        cookies={'user_id': USER_ID},
-        timeout=30
-    )
-    
-    if message_response.status_code == 200:
-        message_data = message_response.json()
-        print(f"✅ Message sent successfully")
-        print(f"   Prompt: {message_data.get('prompt', 'N/A')}")
-        print(f"   Status: {message_data.get('status', 'N/A')}")
-        if message_data.get('content'):
-            print(f"   AI Response: {message_data['content'][:200]}...")
-        print(f"   Container Status: {message_data.get('container_status', 'N/A')}")
-    else:
-        print(f"❌ Failed to send message: {message_response.text}")
-        print(f"   Status code: {message_response.status_code}")
-        return False
-
-    # Step 6: Stop container
-    print(f"\n6. Stopping container...")
-    stop_response = requests.post(
-        f'{API_BASE_URL}/api/backend/sessions/{session_id}/container/stop',
-        cookies={'user_id': USER_ID},
-        timeout=30
-    )
-    
-    if stop_response.status_code == 200:
-        print(f"✅ Container stopped successfully")
-    else:
-        print(f"⚠️  Failed to stop container: {stop_response.text}")
-    
-    # Step 7: Delete session
-    print(f"\n7. Deleting session...")
+    # Step 8: Clean up - Delete session
+    print(f"\n8. Cleaning up - Deleting session...")
     delete_response = requests.delete(
         f'{API_BASE_URL}/api/backend/sessions/{session_id}',
         cookies={'user_id': USER_ID},
@@ -147,16 +182,17 @@ def test_full_workflow():
     if delete_response.status_code == 200:
         print(f"✅ Session deleted successfully")
     else:
-        print(f"❌ Failed to delete session: {delete_response.text}")
+        print(f"⚠️  Failed to delete session: {delete_response.text}")
     
     print("\n" + "=" * 60)
-    print("✅ ALL TESTS PASSED!")
+    print("✅ PERSISTENCE TEST COMPLETED!")
+    print("   Check the AI responses above to verify if conversation history persisted")
     print("=" * 60)
     return True
 
 if __name__ == "__main__":
     try:
-        success = test_full_workflow()
+        success = test_persistence_workflow()
         exit(0 if success else 1)
     except Exception as e:
         print(f"\n❌ Test failed with exception: {e}")

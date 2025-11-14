@@ -100,6 +100,7 @@ class Session(Base):
     container_id = Column(String, nullable=True)
     container_status = Column(String, nullable=True)
     base_url = Column(String, nullable=True)  # Custom base URL for agent containers
+    opencode_session_id = Column(String, nullable=True)  # OpenCode internal session ID for persistence
 
     # Session data (JSON stored as string)
     auth_data = Column(String, nullable=True)  # JSON string for auth configuration

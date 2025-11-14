@@ -329,23 +329,43 @@ async def chat_with_session(
         import requests
         print(f"Requests imported: {requests}")
         
-        # First, ensure the OpenCode session exists
-        opencode_session_id = None
-        try:
-            create_session_url = f"{base_url}/session"
-            create_response = requests.post(
-                create_session_url,
-                json={"title": session.name or f"Session {session_id}"},
-                timeout=10
-            )
-            if create_response.status_code in [200, 201]:
-                session_data = create_response.json()
-                opencode_session_id = session_data.get("id")
-                print(f"Created OpenCode session: {opencode_session_id}")
-            else:
-                print(f"Failed to create OpenCode session: {create_response.status_code} - {create_response.text}")
-        except Exception as e:
-            print(f"Warning: Could not create OpenCode session: {e}")
+        # Check if we have an existing OpenCode session ID from previous runs
+        existing_opencode_session_id = getattr(session, 'opencode_session_id', None)
+        print(f"Existing OpenCode session ID from DB: {existing_opencode_session_id}")
+        
+        # Try to use existing session, or create a new one
+        opencode_session_id = existing_opencode_session_id
+        
+        if not opencode_session_id:
+            # Create new OpenCode session only if we don't have one
+            try:
+                create_session_url = f"{base_url}/session"
+                create_response = requests.post(
+                    create_session_url,
+                    json={"title": session.name or f"Session {session_id}"},
+                    timeout=10
+                )
+                if create_response.status_code in [200, 201]:
+                    session_data = create_response.json()
+                    opencode_session_id = session_data.get("id")
+                    print(f"Created NEW OpenCode session: {opencode_session_id}")
+                    
+                    # Save the OpenCode session ID to database for future reuse
+                    session_service.update_session_container(
+                        user=current_user,
+                        session_id=session_id,
+                        container_id=session.container_id,
+                        container_status="running"
+                    )
+                    # Update the opencode_session_id field
+                    from core.session_ops import update_session_container as update_session_container_db
+                    update_session_container_db(session_id, session.container_id, "running", opencode_session_id)
+                else:
+                    print(f"Failed to create OpenCode session: {create_response.status_code} - {create_response.text}")
+            except Exception as e:
+                print(f"Warning: Could not create OpenCode session: {e}")
+        else:
+            print(f"Reusing existing OpenCode session: {opencode_session_id}")
         
         # Fetch available providers and models from OpenCode
         provider_id = "openai"  # fallback

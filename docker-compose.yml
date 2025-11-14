@@ -56,6 +56,27 @@ services:
       - opencode-network
     command: ["python", "-m", "app.agent-controller"]
 
+  idle-watcher:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    depends_on:
+      - agent-controller
+    volumes:
+      - ./app:/app/app
+      - ./scripts:/app/scripts
+      - ./config/requirements.txt:/app/requirements.txt
+      - ./.env:/app/.env
+      - ./data:/app/data
+    environment:
+      - DATABASE_URL=sqlite:///./data/db.sqlite3
+      - AGENT_CONTROLLER_URL=http://agent-controller:8001
+      - AGENT_SERVICE_SECRET=default-secret-change-in-production
+      - PYTHONPATH=/app
+    command: ["python", "-u", "scripts/idle_watcher.py"]
+    networks:
+      - opencode-network
+
 networks:
   opencode-network:
     driver: bridge
