@@ -844,6 +844,68 @@ async def oauth_callback(code: str = None, state: str = None, db: Session = Depe
         )
 
 
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/auth/admin/login")
+async def admin_login(request: AdminLoginRequest, db: Session = Depends(get_db)):
+    """Local admin login for development"""
+    try:
+        admin_username = os.getenv("ADMIN_USERNAME", "admin")
+        admin_password = os.getenv("ADMIN_PASSWORD", "admin")
+        
+        if request.username != admin_username or request.password != admin_password:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+            
+        # Look for admin user by github_login first (most reliable)
+        user = db.query(User).filter(User.github_login == "admin").first()
+        
+        if not user:
+            # Create new admin user with unique IDs
+            user_id = f"admin-local-{int(datetime.utcnow().timestamp())}"
+            user = User(
+                id=user_id,
+                github_login="admin",
+                github_id=user_id,
+                email="admin@local.dev",
+                avatar_url="https://avatars.githubusercontent.com/u/0?v=4",
+                access_token="local-admin-token",
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+                last_login=datetime.utcnow()
+            )
+            db.add(user)
+        else:
+            # Update last login for existing user
+            user.last_login = datetime.utcnow()
+            
+        db.commit()
+        db.refresh(user)
+        
+        response = JSONResponse(content={"status": "success", "user": {"id": user.id, "login": user.github_login}})
+        
+        # Set secure cookies
+        response.set_cookie(
+            key="user_id",
+            value=user.id,
+            httponly=False,  # Set to True in production with proper CORS
+            samesite="lax",
+            secure=False,  # Allow http for localhost, set to True in production
+            max_age=2592000  # 30 days
+        )
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Admin login failed: {str(e)}")
+
+
 @app.get("/auth/me", response_model=GitHubUserResponse)
 async def get_current_user(request: Request, db: Session = Depends(get_db)):
     """Get current authenticated user"""
@@ -900,14 +962,15 @@ async def refresh_token(user_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Failed to refresh token: {str(e)}")
 
 
-@app.get("/auth/logout")
+@app.post("/auth/logout")
 async def logout():
     """Logout user"""
-    response = JSONResponse({"message": "Logged out successfully"})
+    response = JSONResponse(content={"status": "success"})
+    response.delete_cookie("user_id")
     response.delete_cookie("access_token")
     response.delete_cookie("refresh_token")
-    response.delete_cookie("user_id")
     return response
+
 
 # Agent Management Routes
 @app.get("/api/agents")
