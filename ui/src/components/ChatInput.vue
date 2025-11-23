@@ -1,69 +1,77 @@
 <template>
-  <div class="max-w-5xl mx-auto">
-    <div class="card p-2 shadow-xl hover:shadow-2xl transition-all duration-300">
-      <div class="flex gap-2 items-end">
-        <div class="flex-1 relative">
-          <textarea
-            ref="textareaRef"
-            v-model="localValue"
-            @keydown.enter.exact="handleEnter"
-            @input="adjustHeight"
-            :disabled="disabled"
-            placeholder="Type your message... (Press Enter to send, Shift+Enter for new line)"
-            class="w-full px-4 py-3 border-0 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none min-h-[52px] max-h-[200px] bg-gray-50 hover:bg-white transition-colors"
-            :class="{ 'opacity-50 cursor-not-allowed': disabled }"
-            rows="1"
-          ></textarea>
-        </div>
+  <div class="max-w-4xl mx-auto mb-6 px-4">
+    <div class="relative bg-white rounded-2xl shadow-xl border border-gray-100 transition-all duration-300 hover:shadow-2xl ring-1 ring-black/5">
+      <!-- Main Input Area -->
+      <div class="p-4 pb-2">
+        <textarea
+          ref="textareaRef"
+          v-model="localValue"
+          @keydown.enter.exact="handleEnter"
+          @input="adjustHeight"
+          :disabled="disabled"
+          placeholder="Type your message..."
+          class="w-full px-0 py-2 border-0 bg-transparent text-gray-800 placeholder-gray-400 focus:ring-0 resize-none min-h-[52px] max-h-[200px] text-base leading-relaxed"
+          :class="{ 'opacity-50 cursor-not-allowed': disabled }"
+          rows="1"
+        ></textarea>
+      </div>
+
+      <!-- Footer Controls -->
+      <div class="flex items-center justify-between px-3 pb-3 pt-1">
         
-        <div class="flex gap-2 items-end pb-1">
+        <!-- Left: Selectors -->
+        <div class="flex items-center gap-2">
           <!-- Provider Selector -->
-          <div class="relative">
+          <div class="relative group">
             <select
               v-model="selectedProvider"
               @change="onProviderChange"
-              class="px-3 py-3 pr-8 border-0 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm font-medium bg-gradient-to-r from-primary-50 to-purple-50 text-gray-700 cursor-pointer hover:from-primary-100 hover:to-purple-100 transition-all appearance-none"
+              class="appearance-none pl-3 pr-8 py-1.5 rounded-full text-xs font-semibold bg-gray-50 text-gray-600 border border-gray-200 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-100"
               :disabled="disabled"
             >
               <option v-for="provider in providers" :key="provider.id" :value="provider.id">
                 {{ provider.name }}
               </option>
             </select>
-            <svg class="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none group-hover:text-primary-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
             </svg>
           </div>
           
           <!-- Model Selector -->
-          <div class="relative">
+          <div class="relative group">
             <select
               v-model="selectedModel"
               @change="onModelChange"
-              class="px-3 py-3 pr-8 border-0 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm font-medium bg-gradient-to-r from-blue-50 to-cyan-50 text-gray-700 cursor-pointer hover:from-blue-100 hover:to-cyan-100 transition-all appearance-none"
+              class="appearance-none pl-3 pr-8 py-1.5 rounded-full text-xs font-semibold bg-gray-50 text-gray-600 border border-gray-200 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-100"
               :disabled="disabled"
             >
               <option v-for="(model, modelId) in currentModels" :key="modelId" :value="modelId">
                 {{ model.name }}
               </option>
             </select>
-            <svg class="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
             </svg>
           </div>
-          
-          <!-- Send Button -->
+        </div>
+
+        <!-- Right: Send Button -->
+        <div class="flex items-center gap-2">
+           <span class="text-xs text-gray-400 hidden sm:inline-block mr-2">
+            Press <kbd class="font-sans px-1 py-0.5 bg-gray-100 border border-gray-200 rounded text-[10px]">Enter</kbd> to send
+          </span>
           <button
             @click="handleSend"
             :disabled="disabled || !localValue.trim()"
-            class="btn btn-primary px-5 py-3 self-end shadow-lg hover:shadow-xl group relative overflow-hidden"
-            :class="{ 'opacity-50 cursor-not-allowed': disabled || !localValue.trim() }"
+            class="flex items-center justify-center w-10 h-10 rounded-full bg-primary-600 text-white shadow-md hover:bg-primary-700 hover:shadow-lg hover:scale-105 active:scale-95 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:scale-100"
           >
-            <div class="absolute inset-0 bg-gradient-to-r from-purple-600 to-primary-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            <svg class="w-5 h-5 relative z-10 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            <svg class="w-5 h-5 translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7" />
             </svg>
           </button>
         </div>
+
       </div>
     </div>
   </div>
