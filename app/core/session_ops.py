@@ -22,7 +22,8 @@ def create_session(session_id: str, github_token: str = None) -> Dict[str, Any]:
         # Check if session already exists
         existing = db.query(Session).filter(Session.session_id == session_id).first()
         if existing:
-            raise ValueError("Session already exists")
+            print(f"Session {session_id} already exists, returning existing session")
+            return session_to_dict(existing)
 
         # Create new session record
         session = Session(

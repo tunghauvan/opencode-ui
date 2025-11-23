@@ -315,6 +315,9 @@ async def run_session_container(session_id: str, request: ContainerRunRequest, b
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        import traceback
+        print(f"Error running container: {e}")
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Failed to run container: {str(e)}")
 
 @app.post("/sessions/{session_id}/stop", dependencies=[Depends(verify_service_secret)])

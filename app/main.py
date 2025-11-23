@@ -167,22 +167,37 @@ async def create_session(request: Optional[CreateSessionRequest] = None, current
         response.raise_for_status()
         agent_session_data = response.json()
         
-        # Create session in database
-        db_session = SessionModel(
-            session_id=session_id,
-            user_id=current_user.id,
-            agent_id=agent.id,
-            name=request.title if request else None,
-            status="active",
-            is_active=True,
-            container_id=agent_session_data.get("container_id"),
-            container_status=agent_session_data.get("container_status"),
-            base_url=agent_session_data.get("base_url"),
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
-        )
+        # Create session in database or update if it exists (since agent-controller might have created it)
+        db_session = db.query(SessionModel).filter(SessionModel.session_id == session_id).first()
         
-        db.add(db_session)
+        if db_session:
+            # Update existing session
+            db_session.user_id = current_user.id
+            db_session.agent_id = agent.id
+            db_session.name = request.title if request else None
+            db_session.status = "active"
+            db_session.is_active = True
+            db_session.container_id = agent_session_data.get("container_id")
+            db_session.container_status = agent_session_data.get("container_status")
+            db_session.base_url = agent_session_data.get("base_url")
+            db_session.updated_at = datetime.utcnow()
+        else:
+            # Create new session
+            db_session = SessionModel(
+                session_id=session_id,
+                user_id=current_user.id,
+                agent_id=agent.id,
+                name=request.title if request else None,
+                status="active",
+                is_active=True,
+                container_id=agent_session_data.get("container_id"),
+                container_status=agent_session_data.get("container_status"),
+                base_url=agent_session_data.get("base_url"),
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(db_session)
+        
         db.commit()
         db.refresh(db_session)
         
