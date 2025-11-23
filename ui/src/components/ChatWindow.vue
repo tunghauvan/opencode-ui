@@ -25,6 +25,16 @@
         </div>
         
         <div class="flex items-center gap-2">
+          <!-- Container Controls (Inline) -->
+          <div v-if="sessionStore.currentSession" class="mr-2 border-r border-gray-200 pr-2">
+            <ContainerControls
+              :session-id="sessionStore.currentSessionId"
+              :container-status="sessionStore.currentSession.container_status"
+              :container-id="sessionStore.currentSession.container_id"
+              variant="inline"
+            />
+          </div>
+
           <button
             @click="exportChat"
             class="btn btn-ghost text-sm group"
@@ -45,15 +55,6 @@
             </svg>
           </button>
         </div>
-      </div>
-      
-      <!-- Container Controls -->
-      <div v-if="sessionStore.currentSession" class="mt-3">
-        <ContainerControls
-          :session-id="sessionStore.currentSessionId"
-          :container-status="sessionStore.currentSession.container_status"
-          :container-id="sessionStore.currentSession.container_id"
-        />
       </div>
     </div>
 
