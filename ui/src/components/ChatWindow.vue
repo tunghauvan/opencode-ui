@@ -17,7 +17,12 @@
               <p class="text-xs text-gray-500">
                 Session: {{ sessionStore.currentSessionId?.slice(0, 8) }}
               </p>
-              <span v-if="messages.length > 0" class="status-badge status-online">
+              <span class="text-xs text-gray-300">•</span>
+              <p class="text-xs text-gray-500 flex items-center gap-1">
+                <span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                {{ currentModelDisplay }}
+              </p>
+              <span v-if="messages.length > 0" class="status-badge status-online ml-1">
                 {{ messages.length }} messages
               </span>
             </div>
@@ -119,12 +124,6 @@
       
       <div v-if="chatStore.error" class="mt-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-2 animate-slide-down">
         {{ chatStore.error }}
-      </div>
-      
-      <!-- Current Model Display -->
-      <div class="mt-2 flex items-center justify-center gap-2 text-xs text-gray-500">
-        <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-        <span>Model: <span class="font-semibold text-gray-700">{{ currentModelDisplay }}</span></span>
       </div>
     </div>
   </div>
