@@ -53,11 +53,11 @@ export const useSessionStore = defineStore('session', () => {
     try {
       await backendApi.deleteSession(sessionId)
       sessions.value = sessions.value.filter(s => s.session_id !== sessionId)
-      
+
       // Clean up chat messages for this session
       const chatStore = useChatStore()
       chatStore.deleteSessionMessages(sessionId)
-      
+
       if (currentSessionId.value === sessionId) {
         currentSessionId.value = sessions.value[0]?.session_id || null
       }
@@ -72,7 +72,7 @@ export const useSessionStore = defineStore('session', () => {
 
   async function selectSession(sessionId) {
     currentSessionId.value = sessionId
-    
+
     // Initialize local message storage for this session
     const chatStore = useChatStore()
     chatStore.initializeSession(sessionId)
@@ -88,14 +88,14 @@ export const useSessionStore = defineStore('session', () => {
         is_agent: true
       }
       const result = await backendApi.startContainer(sessionId, config)
-      
+
       // Update session in list
       const sessionIndex = sessions.value.findIndex(s => s.session_id === sessionId)
       if (sessionIndex !== -1) {
         sessions.value[sessionIndex].container_id = result.container_id
         sessions.value[sessionIndex].container_status = result.status
       }
-      
+
       return result
     } catch (e) {
       error.value = 'Failed to start container'
@@ -111,13 +111,13 @@ export const useSessionStore = defineStore('session', () => {
     error.value = null
     try {
       const result = await backendApi.stopContainer(sessionId)
-      
+
       // Update session in list
       const sessionIndex = sessions.value.findIndex(s => s.session_id === sessionId)
       if (sessionIndex !== -1) {
         sessions.value[sessionIndex].container_status = 'stopped'
       }
-      
+
       return result
     } catch (e) {
       error.value = 'Failed to stop container'
@@ -131,13 +131,13 @@ export const useSessionStore = defineStore('session', () => {
   async function getContainerStatus(sessionId) {
     try {
       const status = await backendApi.getContainerStatus(sessionId)
-      
+
       // Update session in list
       const sessionIndex = sessions.value.findIndex(s => s.session_id === sessionId)
       if (sessionIndex !== -1) {
         sessions.value[sessionIndex].container_status = status.status
       }
-      
+
       return status
     } catch (e) {
       console.error('Failed to get container status:', e)
@@ -154,6 +154,28 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  async function updateSession(sessionId, data) {
+    loading.value = true
+    error.value = null
+    try {
+      const updatedSession = await backendApi.updateSession(sessionId, data)
+
+      // Update session in list
+      const sessionIndex = sessions.value.findIndex(s => s.session_id === sessionId)
+      if (sessionIndex !== -1) {
+        sessions.value[sessionIndex] = { ...sessions.value[sessionIndex], ...updatedSession }
+      }
+
+      return updatedSession
+    } catch (e) {
+      error.value = 'Failed to update session'
+      console.error(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     sessions,
     currentSessionId,
@@ -167,6 +189,7 @@ export const useSessionStore = defineStore('session', () => {
     startContainer,
     stopContainer,
     getContainerStatus,
-    getContainerLogs
+    getContainerLogs,
+    updateSession
   }
 })

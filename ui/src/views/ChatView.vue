@@ -2,7 +2,7 @@
   <div class="h-screen flex bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50">
       <!-- Sidebar -->
       <SessionSidebar
-        class="w-80 flex-shrink-0 shadow-2xl"
+        class="flex-shrink-0 shadow-2xl"
         @new-session="handleNewSession"
         @settings-open="openSettings"
       />    <!-- Main Chat Area -->

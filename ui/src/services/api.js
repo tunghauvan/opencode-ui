@@ -45,7 +45,7 @@ export const opencodeApi = {
   // Chat
   async sendMessage(sessionId, prompt, options = {}) {
     const { provider_id = 'github-copilot', model_id = 'gpt-5-mini' } = options
-    const response = await api.post(`/sessions/${sessionId}/chat`, { 
+    const response = await api.post(`/sessions/${sessionId}/chat`, {
       prompt,
       model: {
         providerID: provider_id,
@@ -78,10 +78,10 @@ export const opencodeApi = {
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      
+
       const chunk = decoder.decode(value)
       const lines = chunk.split('\n')
-      
+
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const data = line.slice(6)
@@ -105,7 +105,7 @@ export const backendApi = {
     const params = new URLSearchParams()
     if (filters.status) params.append('status', filters.status)
     if (filters.is_active !== undefined) params.append('is_active', filters.is_active)
-    
+
     const response = await api.get(`/backend/sessions?${params}`)
     return response.data
   },
