@@ -1,26 +1,37 @@
 <template>
   <div 
-    class="h-full flex flex-col bg-gray-50 border-r border-gray-200 transition-all duration-300 ease-in-out"
+    class="h-full flex flex-col bg-gray-50 border-r border-gray-200 transition-[width] duration-300 ease-in-out overflow-hidden whitespace-nowrap"
     :class="isCollapsed ? 'w-[72px]' : 'w-80'"
   >
     <!-- Header -->
-    <div class="shrink-0" :class="isCollapsed ? 'py-4 flex flex-col items-center gap-4' : 'p-4 flex items-center justify-between'">
+    <div class="shrink-0 transition-all duration-300" :class="isCollapsed ? 'py-4 flex flex-col items-center gap-4 w-[72px]' : 'p-4 flex items-center justify-between min-w-[20rem]'">
       
       <!-- Logo Area -->
-      <div v-if="!isCollapsed" class="flex items-center gap-3 overflow-hidden">
+      <div v-if="!isCollapsed" class="flex items-center gap-3 overflow-hidden min-w-0">
         <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center shadow-md shrink-0">
           <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
         </div>
-        <h2 class="text-sm font-bold text-gray-800 tracking-tight whitespace-nowrap">OpenCode</h2>
+        <h2 class="text-sm font-bold text-gray-800 tracking-tight whitespace-nowrap opacity-100 transition-opacity duration-300">OpenCode</h2>
       </div>
       
-      <!-- Collapsed Logo -->
-      <div v-else class="w-10 h-10 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center shadow-md cursor-pointer hover:shadow-lg transition-all" @click="toggleCollapse" title="Expand Sidebar">
-        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
+      <!-- Collapsed Logo & Expand -->
+      <div v-else class="flex flex-col items-center gap-2 animate-fade-in">
+        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center shadow-md cursor-pointer hover:shadow-lg transition-all" @click="toggleCollapse" title="Expand Sidebar">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        <button 
+          @click="toggleCollapse"
+          class="p-1 rounded-full text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors"
+          title="Expand Sidebar"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+          </svg>
+        </button>
       </div>
 
       <!-- Expanded Header Actions -->
@@ -75,7 +86,7 @@
     </div>
 
     <!-- Search (Expanded Only) -->
-    <div class="px-4 pb-4 shrink-0" v-if="!isCollapsed">
+    <div class="px-4 pb-4 shrink-0 min-w-[20rem]" v-if="!isCollapsed">
       <div class="relative group">
         <input 
           ref="searchInput"
@@ -91,7 +102,7 @@
     </div>
 
     <!-- Sessions List -->
-    <div class="flex-1 overflow-y-auto px-2 py-2 scrollbar-thin overflow-x-hidden">
+    <div class="flex-1 overflow-y-auto px-2 py-2 scrollbar-thin overflow-x-hidden" :class="isCollapsed ? 'w-[72px]' : 'min-w-[20rem]'">
       <div v-if="sessionStore.loading && sessionStore.sessions.length === 0" class="p-4 text-center">
         <div class="w-6 h-6 border-2 border-gray-200 border-t-gray-600 rounded-full animate-spin mx-auto mb-2"></div>
         <p class="text-xs text-gray-500" v-if="!isCollapsed">Loading...</p>
@@ -128,7 +139,7 @@
     </div>
 
     <!-- User Profile Footer -->
-    <div class="p-2 border-t border-gray-200 bg-white/50">
+    <div class="p-2 border-t border-gray-200 bg-white/50" :class="isCollapsed ? 'w-[72px]' : 'min-w-[20rem]'">
       <UserProfile 
         :is-collapsed="isCollapsed"
         @settings-open="$emit('settings-open')" 
@@ -138,7 +149,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useSessionStore } from '../stores/session'
 import SessionItem from './SessionItem.vue'
 import UserProfile from './UserProfile.vue'
@@ -156,6 +167,17 @@ defineProps({
 })
 
 defineEmits(['new-session', 'settings-open'])
+
+onMounted(() => {
+  const saved = localStorage.getItem('sidebar-collapsed')
+  if (saved !== null) {
+    isCollapsed.value = JSON.parse(saved)
+  }
+})
+
+watch(isCollapsed, (newVal) => {
+  localStorage.setItem('sidebar-collapsed', JSON.stringify(newVal))
+})
 
 function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value

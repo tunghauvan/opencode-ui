@@ -1,6 +1,6 @@
 <template>
   <div
-    class="group relative mx-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-200 border border-transparent"
+    class="group relative mx-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-300 border border-transparent overflow-hidden"
     :class="[
       active 
         ? 'bg-white shadow-sm border-gray-200' 
@@ -37,7 +37,13 @@
 
       <!-- Expanded Content -->
       <template v-else>
-        <div class="flex-1 min-w-0">
+        <div class="flex-1 min-w-0 flex items-center gap-2">
+          <!-- Status Dot (Expanded) -->
+          <div 
+            class="w-2 h-2 rounded-full shrink-0"
+            :class="statusColor"
+          ></div>
+
           <!-- Edit Mode -->
           <input
             v-if="isEditing"
