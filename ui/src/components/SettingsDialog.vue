@@ -2,309 +2,331 @@
   <Teleport to="body">
     <div v-if="isOpen" class="settings-modal-overlay" @click="closeModal">
       <div class="settings-modal-content" @click.stop>
-        <!-- Modal Header -->
-        <div class="settings-modal-header">
-          <h2>Settings</h2>
-          <button @click="closeModal" class="close-button">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
+        
+        <!-- Sidebar -->
+        <div class="settings-sidebar">
+          <div class="sidebar-header">
+            <h2>Settings</h2>
+          </div>
+          
+          <nav class="sidebar-nav">
+            <button
+              v-for="tab in tabs"
+              :key="tab.id"
+              @click="activeTab = tab.id"
+              :class="['nav-item', { active: activeTab === tab.id }]"
+            >
+              <span class="nav-label">{{ tab.label }}</span>
+            </button>
+          </nav>
 
-        <!-- Tab Navigation -->
-        <div class="tab-navigation">
-          <button
-            @click="activeTab = 'profile'"
-            :class="['tab-button', { active: activeTab === 'profile' }]"
-          >
-            Profile
-          </button>
-          <button
-            @click="activeTab = 'agents'"
-            :class="['tab-button', { active: activeTab === 'agents' }]"
-          >
-            Agents
-          </button>
-          <button
-            @click="activeTab = 'preferences'"
-            :class="['tab-button', { active: activeTab === 'preferences' }]"
-          >
-            Preferences
-          </button>
-        </div>
-
-        <!-- Tab Content -->
-        <div class="tab-content">
-          <!-- Profile Tab -->
-          <div v-if="activeTab === 'profile'" class="tab-panel">
-            <div class="profile-section">
-              <h3>User Profile</h3>
-              <div v-if="user" class="user-info">
-                <div class="user-avatar">
-                  <img :src="user.avatar_url" :alt="user.github_login" />
-                </div>
-                <div class="user-details">
-                  <h4>{{ user.github_login }}</h4>
-                  <p class="user-email">{{ user.email }}</p>
-                  <p class="user-id">ID: {{ user.id }}</p>
-                </div>
-              </div>
-              <div v-else class="loading">
-                <div class="spinner"></div>
-                <p>Loading user information...</p>
+          <div class="sidebar-footer" v-if="user">
+            <div class="user-mini-profile">
+              <img :src="user.avatar_url" :alt="user.github_login" class="mini-avatar" />
+              <div class="mini-details">
+                <span class="mini-name">{{ user.github_login }}</span>
+                <span class="mini-id">ID: {{ user.id }}</span>
               </div>
             </div>
           </div>
+        </div>
 
-          <!-- Agents Tab -->
-          <div v-if="activeTab === 'agents'" class="tab-panel">
-            <div class="agents-section">
-              <div class="agents-header">
-                <h3>AI Agents</h3>
-                <button @click="handleCreateAgent" class="create-agent-button">
-                  + Create New Agent
+        <!-- Main Content -->
+        <div class="settings-main">
+          <div class="main-header">
+            <h3>{{ activeTabLabel }}</h3>
+            <button @click="closeModal" class="close-button">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+
+          <div class="main-content-scroll">
+            
+            <!-- General Tab -->
+            <div v-if="activeTab === 'general'" class="tab-panel">
+              <div class="settings-group">
+                <h4>Appearance</h4>
+                <div class="setting-item">
+                  <label>Theme</label>
+                  <div class="select-wrapper">
+                    <select v-model="theme" @change="savePreferences">
+                      <option value="light">Light</option>
+                      <option value="dark">Dark</option>
+                      <option value="auto">System</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="setting-item">
+                  <label>Language</label>
+                  <div class="select-wrapper">
+                    <select v-model="language" @change="savePreferences">
+                      <option value="en">English</option>
+                      <option value="vi">Tiếng Việt</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Interface Tab (Placeholder) -->
+            <div v-if="activeTab === 'interface'" class="tab-panel">
+              <div class="construction-banner">
+                <span class="construction-icon">🚧</span>
+                <div class="construction-text">
+                  <h4>Under Construction</h4>
+                  <p>These settings are coming soon. Stay tuned!</p>
+                </div>
+              </div>
+
+              <div class="settings-group disabled">
+                <h4>Display</h4>
+                <div class="setting-item">
+                  <label>Font Size</label>
+                  <div class="select-wrapper">
+                    <select disabled>
+                      <option>Medium</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="setting-item">
+                  <label>Density</label>
+                  <div class="select-wrapper">
+                    <select disabled>
+                      <option>Comfortable</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Models Tab -->
+            <div v-if="activeTab === 'models'" class="tab-panel">
+              <div class="settings-group">
+                <h4>AI Model Configuration</h4>
+                <p class="group-description">Select the AI model and provider you want to use for chat.</p>
+                <div class="model-selector-container">
+                  <ModelSelector />
+                </div>
+              </div>
+            </div>
+
+            <!-- Agents Tab -->
+            <div v-if="activeTab === 'agents'" class="tab-panel">
+              <div class="agents-header-actions">
+                <p class="group-description">Manage your AI agents and their capabilities.</p>
+                <button @click="handleCreateAgent" class="primary-button small">
+                  + New Agent
                 </button>
               </div>
 
-              <div v-if="loadingAgents" class="loading">
+              <div v-if="loadingAgents" class="loading-state">
                 <div class="spinner"></div>
                 <p>Loading agents...</p>
               </div>
 
               <div v-else-if="agents.length === 0" class="empty-state">
                 <div class="empty-icon">🤖</div>
-                <h4>No agents yet</h4>
-                <p>Create your first AI agent to get started</p>
-                <button @click="handleCreateAgent" class="create-first-agent-button">
-                  Create Your First Agent
+                <h4>No agents found</h4>
+                <p>Create your first AI agent to get started.</p>
+                <button @click="handleCreateAgent" class="primary-button">
+                  Create Agent
                 </button>
               </div>
 
-              <div v-else class="agents-list">
-                <div
-                  v-for="agent in agents"
-                  :key="agent.id"
-                  class="agent-card"
-                >
-                  <div class="agent-info">
-                    <div class="agent-header">
-                      <h4>{{ agent.name }}</h4>
-                      <span class="agent-status active">Active</span>
+              <div v-else class="agents-grid">
+                <div v-for="agent in agents" :key="agent.id" class="agent-card">
+                  <div class="agent-card-header">
+                    <div class="agent-icon-wrapper">
+                      🤖
                     </div>
-                    <p class="agent-description">{{ agent.description || 'No description' }}</p>
-                    <div class="agent-meta">
-                      <span class="created-date">
-                        Created: {{ formatDate(agent.created_at) }}
-                      </span>
-                      <span v-if="agent.last_used" class="last-used">
-                        Last used: {{ formatDate(agent.last_used) }}
-                      </span>
+                    <div class="agent-title">
+                      <h4>{{ agent.name }}</h4>
+                      <span class="status-badge active">Active</span>
+                    </div>
+                    <div class="agent-actions-menu">
+                      <button @click="deleteAgent(agent)" class="icon-button danger" title="Delete">
+                        🗑️
+                      </button>
                     </div>
                   </div>
-                  <div class="agent-actions">
-                    <button @click="editAgent(agent)" class="edit-button" title="Edit Agent">
-                      ✏️
-                    </button>
-                    <button @click="deleteAgent(agent)" class="delete-button" title="Delete Agent">
-                      🗑️
-                    </button>
+                  <p class="agent-desc">{{ agent.description || 'No description provided.' }}</p>
+                  <div class="agent-footer">
+                    <span class="date">Created: {{ formatDate(agent.created_at) }}</span>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <!-- Preferences Tab -->
-          <div v-if="activeTab === 'preferences'" class="tab-panel">
-            <div class="preferences-section">
-              <h3>Preferences</h3>
-              
-              <!-- Model Selection -->
-              <div class="preference-item model-selection">
-                <h4>AI Model</h4>
-                <p class="model-description">Choose the AI model and provider for your conversations</p>
-                <ModelSelector />
+            <!-- Advanced Tab (Placeholder) -->
+            <div v-if="activeTab === 'advanced'" class="tab-panel">
+               <div class="construction-banner">
+                <span class="construction-icon">🚧</span>
+                <div class="construction-text">
+                  <h4>Under Construction</h4>
+                  <p>Advanced configurations are currently in development.</p>
+                </div>
               </div>
-              
-              <div class="preference-item">
-                <label for="theme">Theme:</label>
-                <select id="theme" v-model="theme" @change="savePreferences">
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                  <option value="auto">Auto</option>
-                </select>
+
+              <div class="settings-group disabled">
+                <h4>Network</h4>
+                <div class="setting-item">
+                  <label>API Endpoint</label>
+                  <input type="text" value="http://localhost:8000" disabled />
+                </div>
               </div>
-              <div class="preference-item">
-                <label for="language">Language:</label>
-                <select id="language" v-model="language" @change="savePreferences">
-                  <option value="en">English</option>
-                  <option value="vi">Tiếng Việt</option>
-                </select>
+               <div class="settings-group disabled">
+                <h4>Debug</h4>
+                <div class="setting-item checkbox-item">
+                  <label>Enable Debug Mode</label>
+                  <input type="checkbox" disabled />
+                </div>
               </div>
             </div>
+
+            <!-- About Tab -->
+            <div v-if="activeTab === 'about'" class="tab-panel">
+              <div class="about-section">
+                <div class="app-logo">
+                  🚀
+                </div>
+                <h3>OpenCode UI</h3>
+                <p class="version">Version 1.0.0-beta</p>
+                <p class="about-desc">
+                  An advanced AI-powered coding assistant interface.
+                </p>
+                <div class="about-links">
+                  <a href="#" class="link-item">Documentation</a>
+                  <a href="#" class="link-item">GitHub Repository</a>
+                  <a href="#" class="link-item">Report an Issue</a>
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
 
+        <!-- Modals (Delete, Agent Creation) -->
         <!-- Delete Confirmation Modal -->
-        <div v-if="showDeleteModal" class="delete-modal-overlay" @click="cancelDelete">
-          <div class="delete-modal-content" @click.stop>
+        <div v-if="showDeleteModal" class="modal-overlay-nested" @click="cancelDelete">
+          <div class="modal-content-nested" @click.stop>
             <h4>Delete Agent</h4>
-            <p>Are you sure you want to delete agent "{{ agentToDelete?.name }}"?</p>
-            <p class="warning-text">This action cannot be undone.</p>
-            <div class="delete-modal-actions">
-              <button @click="cancelDelete" class="cancel-button">Cancel</button>
-              <button @click="confirmDelete" class="delete-confirm-button">Delete</button>
+            <p>Are you sure you want to delete "{{ agentToDelete?.name }}"?</p>
+            <div class="modal-actions">
+              <button @click="cancelDelete" class="secondary-button">Cancel</button>
+              <button @click="confirmDelete" class="danger-button">Delete</button>
             </div>
           </div>
         </div>
 
         <!-- Agent Creation Modal -->
-        <div v-if="showAgentModal" class="agent-modal-overlay" @click="closeAgentModal">
-          <div class="agent-modal-content" @click.stop>
-            <div class="agent-modal-header">
+        <div v-if="showAgentModal" class="modal-overlay-nested" @click="closeAgentModal">
+          <div class="modal-content-nested large" @click.stop>
+            <div class="nested-header">
               <h3>Create New Agent</h3>
-              <button @click="closeAgentModal" class="close-button">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
+              <button @click="closeAgentModal" class="close-button-nested">✕</button>
             </div>
-
-            <div class="agent-modal-body">
-              <!-- Agent Info Section -->
-              <div class="agent-info-section">
-                <div class="agent-details">
-                  <div class="agent-form">
-                    <div class="form-group">
-                      <label for="agent-name">Agent Name:</label>
-                      <input
-                        id="agent-name"
-                        v-model="agentName"
-                        type="text"
-                        placeholder="Enter agent name"
-                        :disabled="isAuthenticating"
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label for="agent-description">Description (optional):</label>
-                      <textarea
-                        id="agent-description"
-                        v-model="agentDescription"
-                        placeholder="Describe what this agent does"
-                        :disabled="isAuthenticating"
-                        rows="3"
-                      ></textarea>
-                    </div>
-                    <div class="action-buttons">
-                      <button
-                        @click="createAgent"
-                        class="create-agent-button"
-                        :disabled="!agentName.trim() || isAuthenticating"
-                      >
-                        {{ isAuthenticating ? 'Creating Agent...' : 'Create Agent' }}
-                      </button>
-                    </div>
-                  </div>
+            
+            <div class="nested-body">
+              <!-- Agent Form -->
+              <div v-if="!deviceCode && !isAuthenticated" class="agent-form">
+                <div class="form-group">
+                  <label>Agent Name</label>
+                  <input v-model="agentName" type="text" placeholder="e.g., Code Assistant" :disabled="isAuthenticating" />
                 </div>
+                <div class="form-group">
+                  <label>Description</label>
+                  <textarea v-model="agentDescription" placeholder="What does this agent do?" rows="3" :disabled="isAuthenticating"></textarea>
+                </div>
+                <button @click="createAgent" class="primary-button full-width" :disabled="!agentName.trim() || isAuthenticating">
+                  {{ isAuthenticating ? 'Initializing...' : 'Create Agent' }}
+                </button>
               </div>
 
-              <!-- Device Code Flow -->
-              <div v-if="deviceCode" class="device-auth-section">
-                <div v-if="!isAuthenticated" class="device-code-section">
-                  <h4>Device Authentication</h4>
-                  <p class="instruction-text">
-                    Copy this code and paste it on the GitHub authorization page:
-                  </p>
-
-                  <div class="code-display">
-                    <code>{{ deviceCode.user_code }}</code>
-                    <button @click="copyCode" class="copy-button" :disabled="copied">
-                      {{ copied ? 'Copied!' : 'Copy' }}
-                    </button>
-                  </div>
-
-                  <div class="link-section">
-                    <p>Then visit this link to enter the code:</p>
-                    <a :href="deviceCode.verification_uri" target="_blank" class="github-link">
-                      {{ deviceCode.verification_uri }}
-                    </a>
-                  </div>
-
-                  <div v-if="pollingStarted" class="polling-status">
-                    <div class="spinner small"></div>
-                    <p>Waiting for authorization... ({{ pollingTimeLeft }}s)</p>
-                  </div>
-
-                  <div class="action-buttons">
-                    <button @click="cancelAuth" class="cancel-button">
-                      Cancel
-                    </button>
-                  </div>
+              <!-- Device Auth -->
+              <div v-if="deviceCode && !isAuthenticated" class="auth-flow">
+                <div class="step-indicator">
+                  <div class="step active">1. Copy Code</div>
+                  <div class="step">2. Authorize</div>
+                </div>
+                
+                <div class="code-box">
+                  <code>{{ deviceCode.user_code }}</code>
+                  <button @click="copyCode" class="copy-btn">{{ copied ? 'Copied!' : 'Copy' }}</button>
                 </div>
 
-                <div v-else class="success-section">
-                  <div class="success-icon">✓</div>
-                  <p>Agent authentication successful!</p>
-                  <p class="agent-info">Agent "{{ agentName }}" has been created and authenticated.</p>
-                  <div class="success-actions">
-                    <button @click="createAnotherAgent" class="create-another-button">
-                      Create Another Agent
-                    </button>
-                    <button @click="closeAgentModal" class="back-home-button">
-                      Close
-                    </button>
-                  </div>
+                <p class="auth-instruction">
+                  Please visit <a :href="deviceCode.verification_uri" target="_blank">{{ deviceCode.verification_uri }}</a> and enter the code above.
+                </p>
+
+                <div class="loading-spinner-container">
+                  <div class="spinner small"></div>
+                  <span>Waiting for authorization...</span>
+                </div>
+
+                <button @click="cancelAuth" class="secondary-button full-width">Cancel</button>
+              </div>
+
+              <!-- Success -->
+              <div v-if="isAuthenticated" class="success-state">
+                <div class="success-icon">✓</div>
+                <h4>Agent Created!</h4>
+                <p>"{{ agentName }}" is ready to use.</p>
+                <div class="modal-actions">
+                  <button @click="createAnotherAgent" class="secondary-button">Create Another</button>
+                  <button @click="closeAgentModal" class="primary-button">Done</button>
                 </div>
               </div>
             </div>
           </div>
         </div>
+
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import ModelSelector from './ModelSelector.vue'
 
-// Props
 const props = defineProps({
-  isOpen: {
-    type: Boolean,
-    default: false
-  }
+  isOpen: { type: Boolean, default: false }
 })
 
-// Emits
-const emit = defineEmits(['close', 'create-agent'])
+const emit = defineEmits(['close'])
 
-// Tab management
-const activeTab = ref('agents')
+// Navigation
+const activeTab = ref('general')
+const tabs = [
+  { id: 'general', label: 'General' },
+  { id: 'interface', label: 'Interface' },
+  { id: 'models', label: 'Models' },
+  { id: 'agents', label: 'Agents' },
+  { id: 'advanced', label: 'Advanced' },
+  { id: 'about', label: 'About' }
+]
 
-// User data
+const activeTabLabel = computed(() => {
+  return tabs.find(t => t.id === activeTab.value)?.label || 'Settings'
+})
+
+// Data
 const user = ref(null)
-
-// Agents data
 const agents = ref([])
 const loadingAgents = ref(false)
-
-// Preferences
 const theme = ref('light')
 const language = ref('en')
 
-// Delete modal
+// Modals
 const showDeleteModal = ref(false)
 const agentToDelete = ref(null)
-
-// Agent modal
 const showAgentModal = ref(false)
 
-// Agent auth data
+// Agent Auth
 const agentName = ref('')
 const agentDescription = ref('')
 const deviceCode = ref(null)
@@ -315,28 +337,29 @@ const pollingTimeLeft = ref(0)
 const copied = ref(false)
 const pollingStarted = ref(false)
 
-const router = useRouter()
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-// Watch for modal opening to load data
+// Watchers
 watch(() => props.isOpen, async (newValue) => {
   if (newValue) {
-    activeTab.value = 'agents' // Reset to agents tab
+    // activeTab.value = 'general' // Optional: reset tab on open
     await loadUserInfo()
-    await loadAgents()
+    if (activeTab.value === 'agents') await loadAgents()
     loadPreferences()
   }
 })
 
+watch(activeTab, async (newTab) => {
+  if (newTab === 'agents') {
+    await loadAgents()
+  }
+})
+
+// Methods
 const loadUserInfo = async () => {
   try {
-    const response = await fetch(`${API_URL}/auth/me`, {
-      credentials: 'include'
-    })
-
-    if (response.ok) {
-      user.value = await response.json()
-    }
+    const response = await fetch(`${API_URL}/auth/me`, { credentials: 'include' })
+    if (response.ok) user.value = await response.json()
   } catch (error) {
     console.error('Error loading user info:', error)
   }
@@ -345,13 +368,8 @@ const loadUserInfo = async () => {
 const loadAgents = async () => {
   loadingAgents.value = true
   try {
-    const response = await fetch(`${API_URL}/api/agents`, {
-      credentials: 'include'
-    })
-
-    if (response.ok) {
-      agents.value = await response.json()
-    }
+    const response = await fetch(`${API_URL}/api/agents`, { credentials: 'include' })
+    if (response.ok) agents.value = await response.json()
   } catch (error) {
     console.error('Error loading agents:', error)
   } finally {
@@ -367,18 +385,18 @@ const loadPreferences = () => {
 const savePreferences = () => {
   localStorage.setItem('theme', theme.value)
   localStorage.setItem('language', language.value)
-  // Apply theme
   document.documentElement.setAttribute('data-theme', theme.value)
 }
 
-const handleCreateAgent = () => {
-  showAgentModal.value = true
+const closeModal = () => emit('close')
+
+const formatDate = (dateString) => {
+  if (!dateString) return 'Never'
+  return new Date(dateString).toLocaleDateString()
 }
 
-const editAgent = (agent) => {
-  // TODO: Implement edit agent functionality
-  alert(`Edit agent: ${agent.name}`)
-}
+// Agent Management
+const handleCreateAgent = () => showAgentModal.value = true
 
 const deleteAgent = (agent) => {
   agentToDelete.value = agent
@@ -387,24 +405,18 @@ const deleteAgent = (agent) => {
 
 const confirmDelete = async () => {
   if (!agentToDelete.value) return
-
   try {
     const response = await fetch(`${API_URL}/api/agents/${agentToDelete.value.id}`, {
       method: 'DELETE',
       credentials: 'include'
     })
-
     if (response.ok) {
-      // Remove agent from list
       agents.value = agents.value.filter(a => a.id !== agentToDelete.value.id)
       showDeleteModal.value = false
       agentToDelete.value = null
-    } else {
-      alert('Failed to delete agent')
     }
   } catch (error) {
     console.error('Error deleting agent:', error)
-    alert('Error deleting agent')
   }
 }
 
@@ -413,145 +425,85 @@ const cancelDelete = () => {
   agentToDelete.value = null
 }
 
+// Agent Auth Flow
 const closeAgentModal = () => {
   showAgentModal.value = false
-  // Reset form state
   agentName.value = ''
   agentDescription.value = ''
   deviceCode.value = null
   isAuthenticated.value = false
   isAuthenticating.value = false
-  pollingStarted.value = false
+  if (pollingController.value) pollingController.value.abort()
 }
 
-const closeModal = () => {
-  emit('close')
-}
-
-const formatDate = (dateString) => {
-  if (!dateString) return 'Never'
-  const date = new Date(dateString)
-  return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-// Agent auth functions
 const createAgent = async () => {
-  if (!agentName.value.trim()) {
-    alert('Please enter an agent name')
-    return
-  }
-
+  if (!agentName.value.trim()) return
   isAuthenticating.value = true
-
   try {
-    const response = await fetch(`${API_URL}/auth/device`, {
-      credentials: 'include'
-    })
-
-    if (!response.ok) {
-      throw new Error(`Failed to get device code: ${response.statusText}`)
-    }
-
+    const response = await fetch(`${API_URL}/auth/device`, { credentials: 'include' })
+    if (!response.ok) throw new Error('Failed to get device code')
     const data = await response.json()
     deviceCode.value = data
-
-    // Start polling immediately
-    startPolling(deviceCode.value.device_code, deviceCode.value.interval || 5, deviceCode.value.expires_in || 900)
-
+    startPolling(data.device_code, data.interval || 5, data.expires_in || 900)
   } catch (error) {
     console.error('Create agent error:', error)
     isAuthenticating.value = false
-    alert('Failed to create agent: ' + error.message)
+    alert('Failed to start agent creation')
   }
 }
 
-const startPolling = async (deviceCodeValue, interval, expiresIn) => {
-  try {
-    pollingController.value = new AbortController()
-
-    pollingStarted.value = true
-    pollingTimeLeft.value = expiresIn || 900
-
-    const countdownInterval = setInterval(() => {
-      pollingTimeLeft.value = Math.max(0, pollingTimeLeft.value - 1)
-      if (pollingTimeLeft.value <= 0) {
-        clearInterval(countdownInterval)
-        if (pollingController.value) {
-          pollingController.value.abort()
+const startPolling = async (code, interval, expiresIn) => {
+  pollingController.value = new AbortController()
+  pollingStarted.value = true
+  
+  // Polling loop handled by recursion or interval
+  const poll = async () => {
+    if (!pollingStarted.value) return
+    try {
+      const response = await fetch(`${API_URL}/auth/device/poll`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          device_code: code,
+          expires_in: expiresIn,
+          agent_name: agentName.value,
+          agent_description: agentDescription.value
+        }),
+        signal: pollingController.value.signal
+      })
+      
+      if (response.ok) {
+        isAuthenticated.value = true
+        pollingStarted.value = false
+        isAuthenticating.value = false
+        await loadAgents()
+      } else {
+        // Continue polling if pending, otherwise stop
+        const data = await response.json()
+        if (data.detail === 'authorization_pending') {
+          setTimeout(poll, interval * 1000)
+        } else {
+          // Error
+          console.error('Polling error:', data)
         }
       }
-    }, 1000)
-
-    const response = await fetch(`${API_URL}/auth/device/poll`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        device_code: deviceCodeValue,
-        expires_in: expiresIn || 900,
-        agent_name: agentName.value,
-        agent_description: agentDescription.value
-      }),
-      signal: pollingController.value.signal
-    })
-
-    clearInterval(countdownInterval)
-    pollingController.value = null
-    pollingStarted.value = false
-    isAuthenticating.value = false
-
-    if (response.ok) {
-      const data = await response.json()
-      isAuthenticated.value = true
-      // Reload agents list
-      await loadAgents()
-    } else {
-      const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
-      alert(`Authorization failed: ${errorData.detail}`)
+    } catch (error) {
+      if (error.name !== 'AbortError') console.error('Polling error:', error)
     }
-
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      console.log('Authentication cancelled or timed out')
-    } else {
-      console.error('Polling error:', error)
-      alert('Polling error: ' + error.message)
-    }
-    pollingController.value = null
-    pollingStarted.value = false
-    isAuthenticating.value = false
   }
+  
+  poll()
 }
 
 const copyCode = async () => {
-  try {
-    await navigator.clipboard.writeText(deviceCode.value.user_code)
-    copied.value = true
-    setTimeout(() => {
-      copied.value = false
-    }, 2000)
-  } catch (error) {
-    console.error('Copy failed:', error)
-    const textArea = document.createElement('textarea')
-    textArea.value = deviceCode.value.user_code
-    document.body.appendChild(textArea)
-    textArea.select()
-    document.execCommand('copy')
-    document.body.removeChild(textArea)
-    copied.value = true
-    setTimeout(() => {
-      copied.value = false
-    }, 2000)
-  }
+  await navigator.clipboard.writeText(deviceCode.value.user_code)
+  copied.value = true
+  setTimeout(() => copied.value = false, 2000)
 }
 
 const cancelAuth = () => {
-  if (pollingController.value) {
-    pollingController.value.abort()
-    pollingController.value = null
-  }
+  if (pollingController.value) pollingController.value.abort()
   deviceCode.value = null
   pollingStarted.value = false
   isAuthenticating.value = false
@@ -564,867 +516,647 @@ const createAnotherAgent = () => {
   isAuthenticated.value = false
   isAuthenticating.value = false
   pollingStarted.value = false
-  // Keep modal open for creating another agent
 }
 </script>
 
 <style scoped>
+/* Modal Overlay & Container */
 .settings-modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  padding: 1rem;
+  animation: fadeIn 0.2s ease-out;
 }
 
 .settings-modal-content {
-  background: white;
-  border-radius: 12px;
-  width: 100%;
-  max-width: 800px;
+  background: #ffffff;
+  width: 900px;
+  height: 600px;
+  max-width: 95vw;
   max-height: 90vh;
-  overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   display: flex;
-  flex-direction: column;
+  overflow: hidden;
 }
 
-/* Modal Header */
-.settings-modal-header {
+/* Sidebar */
+.settings-sidebar {
+  width: 240px;
+  background: #f8fafc;
+  border-right: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 0;
+}
+
+.sidebar-header {
+  padding: 0 1.5rem 1.5rem;
+}
+
+.sidebar-header h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+
+.sidebar-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0 0.75rem;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #64748b;
+  font-weight: 500;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.nav-item:hover {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.nav-item.active {
+  background: #e0f2fe;
+  color: #0284c7;
+}
+
+.nav-icon {
+  font-size: 1.1rem;
+}
+
+.sidebar-footer {
+  padding: 1rem 1.5rem 0;
+  border-top: 1px solid #e2e8f0;
+}
+
+.user-mini-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mini-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid #e2e8f0;
+}
+
+.mini-details {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mini-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-id {
+  font-size: 0.7rem;
+  color: #94a3b8;
+}
+
+/* Main Content */
+.settings-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+
+.main-header {
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid #f1f5f9;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem 2rem;
-  border-bottom: 1px solid #e9ecef;
-  background: #f8f9fa;
 }
 
-.settings-modal-header h2 {
+.main-header h3 {
   margin: 0;
-  color: #1a1a1a;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
+  color: #0f172a;
 }
 
 .close-button {
-  background: none;
+  background: transparent;
   border: none;
+  color: #94a3b8;
   cursor: pointer;
   padding: 0.5rem;
-  border-radius: 4px;
-  color: #6c757d;
+  border-radius: 6px;
   transition: all 0.2s;
 }
 
 .close-button:hover {
-  background: #e9ecef;
-  color: #495057;
+  background: #f1f5f9;
+  color: #64748b;
 }
 
-/* Tab Navigation */
-.tab-navigation {
-  display: flex;
-  background: #f8f9fa;
-  border-bottom: 1px solid #e9ecef;
-}
-
-.tab-button {
+.main-content-scroll {
   flex: 1;
-  padding: 1rem 1.5rem;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: #6c757d;
-  transition: all 0.2s;
-  border-bottom: 3px solid transparent;
-}
-
-.tab-button:hover {
-  background: #e9ecef;
-  color: #495057;
-}
-
-.tab-button.active {
-  color: #007bff;
-  border-bottom-color: #007bff;
-  background: white;
-}
-
-/* Tab Content */
-.tab-content {
-  padding: 1.5rem 2rem;
   overflow-y: auto;
-  flex: 1;
+  padding: 2rem;
 }
 
 .tab-panel {
-  animation: fadeIn 0.3s ease-in-out;
+  animation: slideIn 0.3s ease-out;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Settings Groups */
+.settings-group {
+  margin-bottom: 2.5rem;
 }
 
-/* Profile Tab */
-.profile-section h3 {
+.settings-group.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.settings-group h4 {
+  font-size: 1rem;
+  color: #334155;
   margin: 0 0 1rem;
-  color: #1a1a1a;
-  font-size: 1.25rem;
+  font-weight: 600;
 }
 
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem;
-  background: #f8f9fa;
-  border-radius: 8px;
-}
-
-.user-avatar img {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  border: 2px solid #007bff;
-}
-
-.user-details h4 {
-  margin: 0 0 0.25rem;
-  color: #1a1a1a;
-  font-size: 1.1rem;
-}
-
-.user-email, .user-id {
-  margin: 0.125rem 0;
-  color: #6c757d;
-  font-size: 0.85rem;
-}
-
-/* Agents Tab */
-.agents-section h3 {
-  margin: 0 0 1rem;
-  color: #1a1a1a;
-  font-size: 1.25rem;
-}
-
-.agents-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.group-description {
+  color: #64748b;
+  font-size: 0.9rem;
   margin-bottom: 1.5rem;
 }
 
-.create-agent-button {
-  background: #28a745;
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: background-color 0.2s;
-}
-
-.create-agent-button:hover {
-  background: #218838;
-}
-
-.agents-list {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.agent-card {
+.setting-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
-  background: #f8f9fa;
+  padding: 1rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.setting-item:last-child {
+  border-bottom: none;
+}
+
+.setting-item label {
+  font-weight: 500;
+  color: #475569;
+}
+
+.setting-item input[type="text"] {
+  padding: 0.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  width: 200px;
+}
+
+.select-wrapper select {
+  padding: 0.5rem 2rem 0.5rem 1rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #334155;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+/* Construction Banner */
+.construction-banner {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
   border-radius: 8px;
-  border: 1px solid #e9ecef;
+  padding: 1rem;
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.construction-icon {
+  font-size: 1.5rem;
+}
+
+.construction-text h4 {
+  margin: 0 0 0.25rem;
+  color: #92400e;
+  font-size: 1rem;
+}
+
+.construction-text p {
+  margin: 0;
+  color: #b45309;
+  font-size: 0.9rem;
+}
+
+/* Agents Grid */
+.agents-header-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+}
+
+.agents-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.agent-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.25rem;
+  background: #fff;
   transition: all 0.2s;
 }
 
 .agent-card:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transform: translateY(-1px);
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
 }
 
-.agent-info {
-  flex: 1;
-}
-
-.agent-header {
+.agent-card-header {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 0.25rem;
+  margin-bottom: 1rem;
 }
 
-.agent-header h4 {
-  margin: 0;
-  color: #1a1a1a;
-  font-size: 1rem;
-}
-
-.agent-status {
-  padding: 0.2rem 0.5rem;
-  background: #28a745;
-  color: white;
-  border-radius: 10px;
-  font-size: 0.7rem;
-  font-weight: 500;
-}
-
-.agent-description {
-  margin: 0.25rem 0;
-  color: #6c757d;
-  font-size: 0.8rem;
-}
-
-.agent-meta {
+.agent-icon-wrapper {
+  width: 40px;
+  height: 40px;
+  background: #f1f5f9;
+  border-radius: 8px;
   display: flex;
-  gap: 0.75rem;
-  font-size: 0.75rem;
-  color: #6c757d;
-}
-
-.agent-actions {
-  display: flex;
-  gap: 0.25rem;
-}
-
-.edit-button, .delete-button {
-  background: none;
-  border: none;
-  padding: 0.375rem;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: background-color 0.2s;
-}
-
-.edit-button:hover {
-  background: #007bff;
-}
-
-.delete-button:hover {
-  background: #dc3545;
-}
-
-.edit-button:hover, .delete-button:hover {
-  color: white;
-}
-
-/* Empty State */
-.empty-state {
-  text-align: center;
-  padding: 2rem 1rem;
-  color: #6c757d;
-}
-
-.empty-icon {
-  font-size: 3rem;
-  margin-bottom: 0.75rem;
-}
-
-.empty-state h4 {
-  margin: 0 0 0.25rem;
-  color: #495057;
-}
-
-.empty-state p {
-  margin: 0 0 1.5rem;
-  font-size: 0.85rem;
-}
-
-.create-first-agent-button {
-  background: #007bff;
-  color: white;
-  border: none;
-  padding: 0.5rem 1.5rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: background-color 0.2s;
-}
-
-.create-first-agent-button:hover {
-  background: #0056b3;
-}
-
-/* Preferences Tab */
-.preferences-section h3 {
-  margin: 0 0 1rem;
-  color: #1a1a1a;
+  align-items: center;
+  justify-content: center;
   font-size: 1.25rem;
 }
 
-.preference-item {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 0.75rem;
-  padding: 0.75rem;
-  background: #f8f9fa;
-  border-radius: 6px;
+.agent-title {
+  flex: 1;
 }
 
-.preference-item.model-selection {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding: 1rem;
-}
-
-.preference-item.model-selection h4 {
-  margin: 0 0 0.25rem 0;
-  color: #1a1a1a;
+.agent-title h4 {
+  margin: 0;
   font-size: 1rem;
+  color: #1e293b;
+}
+
+.status-badge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534;
   font-weight: 600;
 }
 
-.model-description {
-  margin: 0 0 0.75rem 0;
-  color: #6c757d;
-  font-size: 0.85rem;
-  line-height: 1.4;
-}
-
-.preference-item label {
-  min-width: 80px;
-  font-weight: 500;
-  color: #495057;
-  font-size: 0.9rem;
-}
-
-.preference-item select {
-  flex: 1;
-  padding: 0.375rem;
-  border: 1px solid #ced4da;
-  border-radius: 4px;
-  font-size: 0.85rem;
-}
-
-/* Loading */
-.loading {
-  text-align: center;
-  padding: 1.5rem;
-  color: #6c757d;
-}
-
-.spinner {
-  width: 30px;
-  height: 30px;
-  border: 3px solid #f3f3f3;
-  border-top: 3px solid #007bff;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin: 0 auto 0.75rem;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.spinner.small {
-  width: 20px;
-  height: 20px;
-  border: 2px solid #f3f3f3;
-  border-top: 2px solid #007bff;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin: 0;
-}
-
-/* Delete Modal */
-.delete-modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1100;
-}
-
-.delete-modal-content {
-  background: white;
-  padding: 1.5rem;
-  border-radius: 8px;
-  max-width: 350px;
-  width: 90%;
-  text-align: center;
-}
-
-.delete-modal-content h4 {
-  margin: 0 0 0.75rem;
-  color: #1a1a1a;
-}
-
-.delete-modal-content p {
-  margin: 0.375rem 0;
-  color: #6c757d;
-  font-size: 0.9rem;
-}
-
-.warning-text {
-  color: #dc3545 !important;
-  font-weight: 500;
-}
-
-.delete-modal-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: center;
-  margin-top: 1.25rem;
-}
-
-.cancel-button {
-  background: #6c757d;
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-}
-
-.delete-confirm-button {
-  background: #dc3545;
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-}
-
-.cancel-button:hover {
-  background: #5a6268;
-}
-
-.delete-confirm-button:hover {
-  background: #c82333;
-}
-
-/* Agent Creation Modal */
-.agent-modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1200;
-}
-
-.agent-modal-content {
-  background: white;
-  border-radius: 12px;
-  width: 100%;
-  max-width: 600px;
-  max-height: 90vh;
+.agent-desc {
+  color: #64748b;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0 0 1rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  display: flex;
-  flex-direction: column;
 }
 
-.agent-modal-header {
+.agent-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem 2rem;
-  border-bottom: 1px solid #e9ecef;
-  background: #f8f9fa;
+  font-size: 0.75rem;
+  color: #94a3b8;
 }
 
-.agent-modal-header h3 {
-  margin: 0;
-  color: #1a1a1a;
-  font-size: 1.25rem;
+.icon-button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
 }
 
-.agent-modal-body {
-  padding: 1.5rem 2rem;
-  overflow-y: auto;
-  flex: 1;
+.icon-button:hover {
+  opacity: 1;
 }
 
-/* Agent Auth Tab */
-.agent-auth-section h3 {
-  margin: 0 0 1rem;
-  color: #1a1a1a;
-  font-size: 1.25rem;
+.icon-button.danger:hover {
+  color: #ef4444;
 }
 
-.agent-info-section {
-  margin-bottom: 2rem;
+/* About Section */
+.about-section {
+  text-align: center;
+  padding: 3rem 1rem;
 }
 
-.agent-details .agent-form {
-  background: #f8f9fa;
-  padding: 1.5rem;
-  border-radius: 8px;
-  border: 1px solid #e9ecef;
-}
-
-.agent-details .form-group {
+.app-logo {
+  font-size: 4rem;
   margin-bottom: 1rem;
+  animation: float 3s ease-in-out infinite;
 }
 
-.agent-details .form-group:last-child {
-  margin-bottom: 0;
+.about-section h3 {
+  font-size: 1.5rem;
+  color: #1e293b;
+  margin: 0 0 0.5rem;
 }
 
-.agent-details .form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 600;
-  color: #333;
-  font-size: 0.9rem;
+.version {
+  color: #64748b;
+  font-family: monospace;
+  background: #f1f5f9;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  display: inline-block;
+  margin-bottom: 1.5rem;
 }
 
-.agent-details .form-group input,
-.agent-details .form-group textarea {
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 1rem;
-  transition: border-color 0.2s;
+.about-links {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-top: 2rem;
 }
 
-.agent-details .form-group input:focus,
-.agent-details .form-group textarea:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+.link-item {
+  color: #0284c7;
+  text-decoration: none;
+  font-weight: 500;
 }
 
-.agent-details .form-group textarea {
-  resize: vertical;
-  min-height: 80px;
+.link-item:hover {
+  text-decoration: underline;
 }
 
-.agent-details .create-agent-button {
-  padding: 0.75rem 2rem;
-  background: #28a745;
+/* Buttons */
+.primary-button {
+  background: #0284c7;
   color: white;
   border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.9rem;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
   font-weight: 500;
-  transition: background-color 0.2s;
-  width: 100%;
+  cursor: pointer;
+  transition: background 0.2s;
 }
 
-.agent-details .create-agent-button:hover:not(:disabled) {
-  background: #218838;
+.primary-button:hover {
+  background: #0369a1;
 }
 
-.agent-details .create-agent-button:disabled {
-  background: #6c757d;
+.primary-button:disabled {
+  background: #94a3b8;
   cursor: not-allowed;
 }
 
-.action-buttons {
+.primary-button.small {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.875rem;
+}
+
+.secondary-button {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.secondary-button:hover {
+  background: #e2e8f0;
+}
+
+.danger-button {
+  background: #ef4444;
+  color: white;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.danger-button:hover {
+  background: #dc2626;
+}
+
+/* Nested Modals */
+.modal-overlay-nested {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
   display: flex;
+  align-items: center;
   justify-content: center;
-  margin-top: 1rem;
+  z-index: 10;
 }
 
-.device-auth-section {
-  width: 100%;
+.modal-content-nested {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 12px;
+  width: 400px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
 }
 
-.device-code-section h4 {
-  margin: 0 0 0.5rem;
-  color: #1a1a1a;
+.modal-content-nested.large {
+  width: 600px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.nested-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.nested-header h3 {
+  margin: 0;
   font-size: 1.1rem;
 }
 
-.device-code-section .instruction-text {
-  text-align: center;
-  color: #666;
-  margin: 0 0 1rem;
-  font-size: 0.9rem;
-  line-height: 1.4;
+.nested-body {
+  padding: 1.5rem;
 }
 
-.code-display {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  background: #f8f9fa;
-  border: 2px solid #e9ecef;
-  border-radius: 8px;
-  padding: 1rem;
-  margin: 1rem 0;
-  width: 100%;
-  max-width: 300px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.code-display code {
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: 1.2rem;
-  font-weight: bold;
-  color: #24292e;
-  letter-spacing: 0.1em;
-  flex: 1;
-  text-align: center;
-}
-
-.code-display .copy-button {
-  padding: 0.5rem 1rem;
-  background: #24292e;
-  color: white;
+.close-button-nested {
+  background: none;
   border: none;
-  border-radius: 6px;
+  font-size: 1.2rem;
   cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: background-color 0.2s;
+  color: #94a3b8;
 }
 
-.code-display .copy-button:hover:not(:disabled) {
-  background: #1a1f26;
-}
-
-.code-display .copy-button:disabled {
-  background: #28a745;
-  cursor: default;
-}
-
-.link-section {
-  text-align: center;
-  margin: 1rem 0;
-}
-
-.link-section p {
-  margin: 0 0 0.5rem;
-  color: #666;
-  font-size: 0.85rem;
-}
-
-.github-link {
-  display: inline-block;
-  color: #0366d6;
-  text-decoration: none;
-  font-weight: 500;
-  padding: 0.5rem 1rem;
-  border: 1px solid #0366d6;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.github-link:hover {
-  background: #0366d6;
-  color: white;
-}
-
-.polling-status {
+.modal-actions {
   display: flex;
-  align-items: center;
+  justify-content: flex-end;
   gap: 0.75rem;
-  color: #666;
-  font-size: 0.85rem;
-  margin: 1rem 0;
-  justify-content: center;
+  margin-top: 1.5rem;
 }
 
-.device-code-section .action-buttons {
+/* Form Elements */
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #334155;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.1);
+}
+
+.full-width {
+  width: 100%;
+}
+
+/* Auth Flow */
+.step-indicator {
   display: flex;
   gap: 1rem;
-  margin-top: 1rem;
-  justify-content: center;
+  margin-bottom: 1.5rem;
 }
 
-.device-code-section .cancel-button {
-  padding: 0.75rem 1.5rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: all 0.2s;
-  background: #dc3545;
-  color: white;
-}
-
-.device-code-section .cancel-button:hover {
-  background: #c82333;
-}
-
-.success-section {
-  color: #28a745;
-  text-align: center;
-}
-
-.success-section .success-icon {
-  font-size: 3rem;
-  font-weight: bold;
-  margin-bottom: 0.5rem;
-}
-
-.success-section p {
-  margin: 0 0 0.5rem;
+.step {
+  font-size: 0.875rem;
+  color: #94a3b8;
   font-weight: 500;
 }
 
-.success-section .agent-info {
-  color: #666;
-  font-size: 0.85rem;
+.step.active {
+  color: #0284c7;
+}
+
+.code-box {
+  background: #f8fafc;
+  border: 2px dashed #cbd5e1;
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 1rem;
 }
 
-.success-actions {
+.code-box code {
+  font-family: monospace;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #1e293b;
+}
+
+.copy-btn {
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.auth-instruction {
+  text-align: center;
+  color: #64748b;
+  margin-bottom: 1.5rem;
+}
+
+.loading-spinner-container {
   display: flex;
-  gap: 1rem;
+  align-items: center;
   justify-content: center;
-  margin-top: 1.5rem;
-  flex-wrap: wrap;
+  gap: 0.75rem;
+  color: #64748b;
+  margin-bottom: 1.5rem;
 }
 
-.create-another-button {
-  padding: 0.75rem 1.5rem;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: background-color 0.2s;
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.create-another-button:hover {
-  background: #5a67d8;
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.success-section .back-home-button {
-  padding: 0.75rem 1.5rem;
-  background: #007bff;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: background-color 0.2s;
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
 }
 
-.success-section .back-home-button:hover {
-  background: #0056b3;
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
-/* Responsive */
-@media (max-width: 768px) {
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #0284c7;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
 
-  .settings-modal-header {
-    padding: 1rem 1.5rem;
-  }
-
-  .settings-modal-header h2 {
-    font-size: 1.25rem;
-  }
-
-  .tab-content {
-    padding: 1rem 1.5rem;
-  }
-
-  .agents-header {
-    flex-direction: column;
-    gap: 0.75rem;
-    align-items: stretch;
-  }
-
-  .agent-card {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.75rem;
-  }
-
-  .agent-actions {
-    align-self: flex-end;
-  }
-
-  .user-info {
-    flex-direction: column;
-    text-align: center;
-    gap: 0.75rem;
-  }
-
-  .preference-item {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.375rem;
-  }
-
-  .delete-modal-actions {
-    flex-direction: column;
-  }
-
-  /* Agent Modal Responsive */
-  .agent-modal-content {
-    max-width: 95vw;
-    max-height: 95vh;
-  }
-
-  .agent-modal-header {
-    padding: 1rem 1.5rem;
-  }
-
-  .agent-modal-header h3 {
-    font-size: 1.1rem;
-  }
-
-  .agent-modal-body {
-    padding: 1rem 1.5rem;
-  }
-
-  /* Agent Auth Responsive */
-  .agent-details .agent-form {
-    padding: 1rem;
-  }
-
-  .code-display {
-    max-width: 100%;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .code-display code {
-    font-size: 1rem;
-  }
-
-  .device-code-section .action-buttons {
-    flex-direction: column;
-  }
-
-  .success-actions {
-    flex-direction: column;
-  }
+.spinner.small {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
 }
 </style>
