@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel
 from sqlalchemy.orm import Session as DBSession
+import requests as sync_requests
 
 from core.database import get_db
 from core.models import User
@@ -569,10 +570,8 @@ async def list_files(
         
         base_url = session.base_url or f"http://agent_{session_id}:4096"
         
-        import requests
-        
         # Call the container's file listing endpoint
-        response = requests.get(
+        response = sync_requests.get(
             f"{base_url}/files/list",
             params={"path": path},
             timeout=10
@@ -614,10 +613,8 @@ async def read_file(
         
         base_url = session.base_url or f"http://agent_{session_id}:4096"
         
-        import requests
-        
         # Call the container's file read endpoint
-        response = requests.get(
+        response = sync_requests.get(
             f"{base_url}/files/read",
             params={"path": path},
             timeout=10
@@ -642,8 +639,8 @@ async def read_file(
 @backend_router.post("/sessions/{session_id}/files/write")
 async def write_file(
     session_id: str,
+    request: WriteFileRequest,
     path: str = Query(..., description="File path to write"),
-    request: WriteFileRequest = None,
     current_user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db)
 ):
@@ -657,10 +654,8 @@ async def write_file(
         
         base_url = session.base_url or f"http://agent_{session_id}:4096"
         
-        import requests
-        
         # Call the container's file write endpoint
-        response = requests.post(
+        response = sync_requests.post(
             f"{base_url}/files/write",
             params={"path": path},
             json={"content": request.content},

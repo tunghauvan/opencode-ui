@@ -30,7 +30,24 @@ export const useFileStore = defineStore('file', () => {
 
   // Detect language from file extension
   function detectLanguage(path) {
-    const ext = path.split('.').pop().toLowerCase()
+    const fileName = path.split('/').pop().toLowerCase()
+    const parts = fileName.split('.')
+    
+    // Handle files without extension or with special names
+    if (parts.length === 1 || fileName.startsWith('.')) {
+      // Check for special filenames without extensions
+      const specialFiles = {
+        'dockerfile': 'dockerfile',
+        'makefile': 'makefile',
+        '.gitignore': 'plaintext',
+        '.env': 'plaintext',
+        '.dockerignore': 'plaintext',
+        '.editorconfig': 'plaintext'
+      }
+      return specialFiles[fileName] || 'plaintext'
+    }
+    
+    const ext = parts.pop()
     const languageMap = {
       'js': 'javascript',
       'jsx': 'javascript',
@@ -213,8 +230,9 @@ export const useFileStore = defineStore('file', () => {
       // If this was the active file, switch to another one
       if (activeFilePath.value === path) {
         if (openFiles.value.length > 0) {
-          // Switch to the previous file or the first one
-          activeFilePath.value = openFiles.value[Math.max(0, index - 1)].path
+          // Switch to the next available file, or the previous one if at the end
+          const newIndex = index < openFiles.value.length ? index : Math.max(0, index - 1)
+          activeFilePath.value = openFiles.value[newIndex].path
         } else {
           activeFilePath.value = null
         }

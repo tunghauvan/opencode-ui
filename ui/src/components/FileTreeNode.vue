@@ -84,7 +84,23 @@ function getIcon() {
     return isExpanded.value ? '📂' : '📁'
   }
 
-  const ext = props.item.name.split('.').pop().toLowerCase()
+  const fileName = props.item.name.toLowerCase()
+  const parts = fileName.split('.')
+  
+  // Handle files without extension or special filenames
+  if (parts.length === 1 || fileName.startsWith('.')) {
+    const specialFiles = {
+      'dockerfile': '🐳',
+      'makefile': '⚙️',
+      '.gitignore': '🚫',
+      '.dockerignore': '🚫',
+      '.env': '🔐',
+      '.editorconfig': '⚙️'
+    }
+    return specialFiles[fileName] || '📄'
+  }
+  
+  const ext = parts.pop()
   const iconMap = {
     'js': '📜',
     'jsx': '⚛️',
