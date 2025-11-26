@@ -226,6 +226,13 @@ export const backendApi = {
       params: { path, recursive }
     })
     return response.data
+  },
+
+  async renameFile(sessionId, oldPath, newPath) {
+    const response = await api.post(`/backend/sessions/${sessionId}/files/rename`, null, {
+      params: { old_path: oldPath, new_path: newPath }
+    })
+    return response.data
   }
 }
 

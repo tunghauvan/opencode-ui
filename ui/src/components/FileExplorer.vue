@@ -8,16 +8,36 @@
         </svg>
         <span class="font-semibold text-gray-700">Explorer</span>
       </div>
-      <button
-        @click="refreshTree"
-        :disabled="loading"
-        class="p-1.5 rounded-lg hover:bg-white/50 text-gray-500 hover:text-gray-700 transition-colors"
-        title="Refresh"
-      >
-        <svg class="w-4 h-4" :class="{ 'animate-spin': loading }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-      </button>
+      <div class="flex items-center gap-1">
+        <button
+          @click="handleNewFile"
+          class="p-1.5 rounded-lg hover:bg-white/50 text-gray-500 hover:text-gray-700 transition-colors"
+          title="New File"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </button>
+        <button
+          @click="handleNewFolder"
+          class="p-1.5 rounded-lg hover:bg-white/50 text-gray-500 hover:text-gray-700 transition-colors"
+          title="New Folder"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+          </svg>
+        </button>
+        <button
+          @click="refreshTree"
+          :disabled="loading"
+          class="p-1.5 rounded-lg hover:bg-white/50 text-gray-500 hover:text-gray-700 transition-colors"
+          title="Refresh"
+        >
+          <svg class="w-4 h-4" :class="{ 'animate-spin': loading }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+      </div>
     </div>
 
     <!-- Current Path -->
@@ -102,6 +122,36 @@ async function handleSelectFile(path) {
     await fileStore.openFile(sessionStore.currentSessionId, path)
   } catch (e) {
     console.error('Failed to open file:', e)
+  }
+}
+
+async function handleNewFile() {
+  if (!sessionStore.currentSessionId) return
+  const fileName = prompt('Enter file name:')
+  if (!fileName) return
+  
+  // Determine path (current directory or root)
+  // For simplicity, creating in root for now, or we could track selected directory
+  const path = `/${fileName}`
+  
+  try {
+    await fileStore.createFile(sessionStore.currentSessionId, path)
+  } catch (e) {
+    alert('Failed to create file: ' + e.message)
+  }
+}
+
+async function handleNewFolder() {
+  if (!sessionStore.currentSessionId) return
+  const folderName = prompt('Enter folder name:')
+  if (!folderName) return
+  
+  const path = `/${folderName}`
+  
+  try {
+    await fileStore.createDirectory(sessionStore.currentSessionId, path)
+  } catch (e) {
+    alert('Failed to create folder: ' + e.message)
   }
 }
 

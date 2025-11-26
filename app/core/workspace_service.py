@@ -341,6 +341,44 @@ class WorkspaceService:
             return resolved_path.is_dir()
         except:
             return False
+    
+    def rename_file(self, old_path: str, new_path: str) -> Dict[str, Any]:
+        """
+        Rename a file or directory.
+        
+        Args:
+            old_path: Current path relative to workspace root
+            new_path: New path relative to workspace root
+            
+        Returns:
+            Dictionary with success status
+        """
+        try:
+            resolved_old = self._resolve_path(old_path)
+            resolved_new = self._resolve_path(new_path)
+            
+            if not resolved_old.exists():
+                raise FileNotFoundError(f"Path '{old_path}' not found")
+            
+            if resolved_new.exists():
+                raise ValueError(f"Destination '{new_path}' already exists")
+            
+            # Create parent directories for destination if needed
+            resolved_new.parent.mkdir(parents=True, exist_ok=True)
+            
+            resolved_old.rename(resolved_new)
+            
+            return {
+                "old_path": old_path,
+                "new_path": new_path,
+                "success": True,
+                "message": "Renamed successfully"
+            }
+            
+        except (FileNotFoundError, ValueError):
+            raise
+        except Exception as e:
+            raise Exception(f"Failed to rename: {str(e)}")
 
 
 def get_workspace_service(session_id: str) -> WorkspaceService:

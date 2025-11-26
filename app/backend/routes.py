@@ -801,6 +801,34 @@ async def delete_directory(
         raise HTTPException(status_code=error_response["status_code"], detail=error_response["error"])
 
 
+@backend_router.post("/sessions/{session_id}/files/rename")
+async def rename_file(
+    session_id: str,
+    old_path: str = Query(..., description="Current file path"),
+    new_path: str = Query(..., description="New file path"),
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """Rename a file or directory in a session's workspace"""
+    try:
+        session_service = SessionManagementService(db)
+        session = session_service.get_session(current_user, session_id)
+        
+        # Use workspace service for direct file access
+        from core.workspace_service import get_workspace_service
+        workspace = get_workspace_service(session_id)
+        
+        result = workspace.rename_file(old_path, new_path)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        error_response = ErrorHandler.handle_error(e)
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response["error"])
+
+
 # Helper Functions
 
 def session_to_response(session) -> SessionResponse:

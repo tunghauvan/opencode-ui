@@ -2,7 +2,7 @@
   <div class="tree-node">
     <!-- Node Item -->
     <div
-      class="node-item flex items-center gap-1 px-2 py-1 rounded-lg cursor-pointer hover:bg-white/60 transition-all"
+      class="node-item group flex items-center gap-1 px-2 py-1 rounded-lg cursor-pointer hover:bg-white/60 transition-all"
       :style="{ paddingLeft: `${depth * 16 + 8}px` }"
       :class="{ 'bg-primary-100 text-primary-700': isActive }"
       @click="handleClick"
@@ -26,10 +26,23 @@
       <!-- Name -->
       <span class="node-name text-sm truncate" :title="item.name">{{ item.name }}</span>
 
-      <!-- File size (for files) -->
-      <span v-if="item.type === 'file' && item.size" class="text-xs text-gray-400 ml-auto">
-        {{ formatSize(item.size) }}
-      </span>
+      <!-- Actions (Rename/Delete) -->
+      <div class="actions ml-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button 
+          @click.stop="handleRename" 
+          class="p-0.5 hover:bg-gray-200 rounded text-xs" 
+          title="Rename"
+        >
+          ✏️
+        </button>
+        <button 
+          @click.stop="handleDelete" 
+          class="p-0.5 hover:bg-red-100 text-red-600 rounded text-xs" 
+          title="Delete"
+        >
+          🗑️
+        </button>
+      </div>
     </div>
 
     <!-- Children (for directories) -->
@@ -50,6 +63,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useFileStore } from '../stores/file'
+import { useSessionStore } from '../stores/session'
 
 const props = defineProps({
   item: {
@@ -69,6 +83,7 @@ const props = defineProps({
 const emit = defineEmits(['toggle-dir', 'select-file'])
 
 const fileStore = useFileStore()
+const sessionStore = useSessionStore()
 
 const isExpanded = computed(() => {
   return props.expandedDirs.has(props.item.path)
@@ -77,6 +92,48 @@ const isExpanded = computed(() => {
 const isActive = computed(() => {
   return fileStore.activeFilePath === props.item.path
 })
+
+async function handleRename() {
+  const newName = prompt('Enter new name:', props.item.name)
+  if (newName && newName !== props.item.name) {
+    try {
+      // Calculate new path
+      // Handle root files vs nested files
+      const lastSlashIndex = props.item.path.lastIndexOf('/')
+      const parentPath = lastSlashIndex === 0 ? '/' : props.item.path.substring(0, lastSlashIndex)
+      
+      // If parentPath is just '/', we need to be careful not to double slash if we just append
+      // Actually, paths usually start with /. 
+      // If path is /foo.txt, parent is /. newPath should be /bar.txt
+      // If path is /dir/foo.txt, parent is /dir. newPath should be /dir/bar.txt
+      
+      let newPath
+      if (parentPath === '/') {
+        newPath = `/${newName}`
+      } else {
+        newPath = `${parentPath}/${newName}`
+      }
+      
+      await fileStore.renameFile(sessionStore.currentSessionId, props.item.path, newPath)
+    } catch (e) {
+      alert('Failed to rename: ' + e.message)
+    }
+  }
+}
+
+async function handleDelete() {
+  if (confirm(`Are you sure you want to delete ${props.item.name}?`)) {
+    try {
+      if (props.item.type === 'directory') {
+        await fileStore.deleteDirectory(sessionStore.currentSessionId, props.item.path)
+      } else {
+        await fileStore.deleteFile(sessionStore.currentSessionId, props.item.path)
+      }
+    } catch (e) {
+      alert('Failed to delete: ' + e.message)
+    }
+  }
+}
 
 // Get icon based on type and extension
 function getIcon() {

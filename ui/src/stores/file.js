@@ -221,6 +221,131 @@ export const useFileStore = defineStore('file', () => {
     }
   }
 
+  // Create a new file
+  async function createFile(sessionId, path, content = '') {
+    loading.value = true
+    error.value = null
+    try {
+      await backendApi.writeFile(sessionId, path, content)
+      // Refresh parent directory
+      const parentPath = path.substring(0, path.lastIndexOf('/')) || '/'
+      await loadFileTree(sessionId, parentPath)
+      return true
+    } catch (e) {
+      error.value = 'Failed to create file'
+      console.error(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // Create a new directory
+  async function createDirectory(sessionId, path) {
+    loading.value = true
+    error.value = null
+    try {
+      await backendApi.createDirectory(sessionId, path)
+      // Refresh parent directory
+      const parentPath = path.substring(0, path.lastIndexOf('/')) || '/'
+      await loadFileTree(sessionId, parentPath)
+      return true
+    } catch (e) {
+      error.value = 'Failed to create directory'
+      console.error(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // Rename a file or directory
+  async function renameFile(sessionId, oldPath, newPath) {
+    loading.value = true
+    error.value = null
+    try {
+      await backendApi.renameFile(sessionId, oldPath, newPath)
+      
+      // Update open files if needed
+      const openFileIndex = openFiles.value.findIndex(f => f.path === oldPath)
+      if (openFileIndex !== -1) {
+        const file = openFiles.value[openFileIndex]
+        file.path = newPath
+        file.language = detectLanguage(newPath)
+        
+        if (activeFilePath.value === oldPath) {
+          activeFilePath.value = newPath
+        }
+      }
+      
+      // Refresh parent directory of old path and new path
+      const oldParent = oldPath.substring(0, oldPath.lastIndexOf('/')) || '/'
+      const newParent = newPath.substring(0, newPath.lastIndexOf('/')) || '/'
+      
+      await loadFileTree(sessionId, oldParent)
+      if (oldParent !== newParent) {
+        await loadFileTree(sessionId, newParent)
+      }
+      
+      return true
+    } catch (e) {
+      error.value = 'Failed to rename'
+      console.error(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // Delete a file
+  async function deleteFile(sessionId, path) {
+    loading.value = true
+    error.value = null
+    try {
+      await backendApi.deleteFile(sessionId, path)
+      
+      // Close if open
+      closeFile(path)
+      
+      // Refresh parent directory
+      const parentPath = path.substring(0, path.lastIndexOf('/')) || '/'
+      await loadFileTree(sessionId, parentPath)
+      
+      return true
+    } catch (e) {
+      error.value = 'Failed to delete file'
+      console.error(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // Delete a directory
+  async function deleteDirectory(sessionId, path) {
+    loading.value = true
+    error.value = null
+    try {
+      await backendApi.deleteDirectory(sessionId, path, true) // Recursive delete
+      
+      // Close any open files inside this directory
+      const filesToClose = openFiles.value.filter(f => f.path.startsWith(path + '/'))
+      filesToClose.forEach(f => closeFile(f.path))
+      
+      // Refresh parent directory
+      const parentPath = path.substring(0, path.lastIndexOf('/')) || '/'
+      await loadFileTree(sessionId, parentPath)
+      
+      return true
+    } catch (e) {
+      error.value = 'Failed to delete directory'
+      console.error(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   // Close a file
   function closeFile(path) {
     const index = openFiles.value.findIndex(f => f.path === path)
@@ -287,6 +412,11 @@ export const useFileStore = defineStore('file', () => {
     openFile,
     updateFileContent,
     saveFile,
+    createFile,
+    createDirectory,
+    renameFile,
+    deleteFile,
+    deleteDirectory,
     closeFile,
     toggleEditor,
     showEditor,

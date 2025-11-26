@@ -60,8 +60,27 @@
       <div class="flex items-center gap-4">
         <span v-if="activeFile">{{ activeFile.path }}</span>
         <span v-if="activeFile && activeFile.modified" class="text-primary-500 font-medium">Modified</span>
+        <span v-if="cursorPosition">Ln {{ cursorPosition.lineNumber }}, Col {{ cursorPosition.column }}</span>
       </div>
       <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2 mr-2">
+          <button 
+            @click="toggleMinimap" 
+            class="hover:text-gray-800" 
+            :class="{ 'text-primary-600 font-medium': showMinimap }"
+            title="Toggle Minimap"
+          >
+            Minimap
+          </button>
+          <button 
+            @click="toggleWordWrap" 
+            class="hover:text-gray-800" 
+            :class="{ 'text-primary-600 font-medium': wordWrap === 'on' }"
+            title="Toggle Word Wrap"
+          >
+            Wrap
+          </button>
+        </div>
         <span v-if="activeFile">{{ activeFile.language }}</span>
         <span v-if="activeFile">{{ activeFile.encoding }}</span>
         <button
@@ -95,6 +114,10 @@ const saving = computed(() => fileStore.saving)
 const openFiles = computed(() => fileStore.openFiles)
 const activeFilePath = computed(() => fileStore.activeFilePath)
 const activeFile = computed(() => fileStore.activeFile)
+
+const cursorPosition = ref(null)
+const showMinimap = ref(true)
+const wordWrap = ref('on')
 
 // Get file name from path
 function getFileName(path) {
@@ -155,13 +178,31 @@ async function handleSave() {
   }
 }
 
+function toggleMinimap() {
+  if (monacoEditor) {
+    showMinimap.value = !showMinimap.value
+    monacoEditor.updateOptions({
+      minimap: { enabled: showMinimap.value }
+    })
+  }
+}
+
+function toggleWordWrap() {
+  if (monacoEditor) {
+    wordWrap.value = wordWrap.value === 'on' ? 'off' : 'on'
+    monacoEditor.updateOptions({
+      wordWrap: wordWrap.value
+    })
+  }
+}
+
 // Initialize Monaco Editor
 async function initMonaco() {
   try {
     // Configure Monaco loader to use CDN
     loader.config({
       paths: {
-        vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs'
+        vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.55.1/min/vs'
       }
     })
     
@@ -173,10 +214,10 @@ async function initMonaco() {
         language: 'plaintext',
         theme: 'vs',
         automaticLayout: true,
-        minimap: { enabled: true },
+        minimap: { enabled: showMinimap.value },
         fontSize: 14,
         lineNumbers: 'on',
-        wordWrap: 'on',
+        wordWrap: wordWrap.value,
         scrollBeyondLastLine: false,
         renderWhitespace: 'selection',
         tabSize: 2,
@@ -191,6 +232,11 @@ async function initMonaco() {
           const content = monacoEditor.getValue()
           fileStore.updateFileContent(activeFilePath.value, content)
         }
+      })
+      
+      // Listen for cursor position changes
+      monacoEditor.onDidChangeCursorPosition((e) => {
+        cursorPosition.value = e.position
       })
 
       // Add keyboard shortcuts
