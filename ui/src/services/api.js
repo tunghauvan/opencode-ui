@@ -176,6 +176,29 @@ export const backendApi = {
   async getModels() {
     const response = await api.get('/models')
     return response.data
+  },
+
+  // File Access API
+  async listFiles(sessionId, path = '/') {
+    const response = await api.get(`/backend/sessions/${sessionId}/files/list`, {
+      params: { path }
+    })
+    return response.data
+  },
+
+  async readFile(sessionId, path) {
+    const response = await api.get(`/backend/sessions/${sessionId}/files/read`, {
+      params: { path }
+    })
+    return response.data
+  },
+
+  async writeFile(sessionId, path, content) {
+    const response = await api.post(`/backend/sessions/${sessionId}/files/write`, 
+      { content },
+      { params: { path } }
+    )
+    return response.data
   }
 }
 

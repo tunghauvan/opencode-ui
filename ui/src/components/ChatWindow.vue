@@ -40,6 +40,18 @@
             />
           </div>
 
+          <!-- Toggle Editor Button -->
+          <button
+            @click="$emit('toggle-editor')"
+            class="btn btn-ghost text-sm group"
+            :class="{ 'bg-primary-100 text-primary-600': isEditorVisible }"
+            title="Toggle Code Editor"
+          >
+            <svg class="w-5 h-5 group-hover:text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+            </svg>
+          </button>
+
           <button
             @click="exportChat"
             class="btn btn-ghost text-sm group"
@@ -133,12 +145,16 @@
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useSessionStore } from '../stores/session'
 import { useChatStore } from '../stores/chat'
+import { useFileStore } from '../stores/file'
 import MessageBubble from './MessageBubble.vue'
 import ChatInput from './ChatInput.vue'
 import ContainerControls from './ContainerControls.vue'
 
+defineEmits(['toggle-editor'])
+
 const sessionStore = useSessionStore()
 const chatStore = useChatStore()
+const fileStore = useFileStore()
 
 const inputMessage = ref('')
 const messagesContainer = ref(null)
@@ -158,6 +174,8 @@ const currentModelDisplay = computed(() => {
   const model = chatStore.selectedModel
   return `${provider}/${model}`
 })
+
+const isEditorVisible = computed(() => fileStore.isEditorVisible)
 
 // Load models on mount
 onMounted(async () => {

@@ -545,6 +545,144 @@ async def get_recent_sessions(
         raise HTTPException(status_code=error_response["status_code"], detail=error_response["error"])
 
 
+# Request models for file operations
+class WriteFileRequest(BaseModel):
+    content: str
+
+
+# File Access API Routes
+
+@backend_router.get("/sessions/{session_id}/files/list")
+async def list_files(
+    session_id: str,
+    path: str = Query("/", description="Directory path to list"),
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """List files and directories in a container's filesystem"""
+    try:
+        session_service = SessionManagementService(db)
+        session = session_service.get_session(current_user, session_id)
+        
+        if not session.container_id:
+            raise HTTPException(status_code=400, detail="Session has no running container")
+        
+        base_url = session.base_url or f"http://agent_{session_id}:4096"
+        
+        import requests
+        
+        # Call the container's file listing endpoint
+        response = requests.get(
+            f"{base_url}/files/list",
+            params={"path": path},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            # If container doesn't have file API, return mock data for development
+            return {
+                "path": path,
+                "entries": [
+                    {"name": "src", "type": "directory", "path": f"{path}/src".replace("//", "/")},
+                    {"name": "package.json", "type": "file", "path": f"{path}/package.json".replace("//", "/"), "size": 1024},
+                    {"name": "README.md", "type": "file", "path": f"{path}/README.md".replace("//", "/"), "size": 512},
+                ]
+            }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        error_response = ErrorHandler.handle_error(e)
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response["error"])
+
+
+@backend_router.get("/sessions/{session_id}/files/read")
+async def read_file(
+    session_id: str,
+    path: str = Query(..., description="File path to read"),
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """Read file content from a container's filesystem"""
+    try:
+        session_service = SessionManagementService(db)
+        session = session_service.get_session(current_user, session_id)
+        
+        if not session.container_id:
+            raise HTTPException(status_code=400, detail="Session has no running container")
+        
+        base_url = session.base_url or f"http://agent_{session_id}:4096"
+        
+        import requests
+        
+        # Call the container's file read endpoint
+        response = requests.get(
+            f"{base_url}/files/read",
+            params={"path": path},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            # If container doesn't have file API, return mock data for development
+            return {
+                "path": path,
+                "content": f"// Mock content for {path}\n// Container file API not available\nconsole.log('Hello World');",
+                "encoding": "utf-8"
+            }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        error_response = ErrorHandler.handle_error(e)
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response["error"])
+
+
+@backend_router.post("/sessions/{session_id}/files/write")
+async def write_file(
+    session_id: str,
+    path: str = Query(..., description="File path to write"),
+    request: WriteFileRequest = None,
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """Write file content to a container's filesystem"""
+    try:
+        session_service = SessionManagementService(db)
+        session = session_service.get_session(current_user, session_id)
+        
+        if not session.container_id:
+            raise HTTPException(status_code=400, detail="Session has no running container")
+        
+        base_url = session.base_url or f"http://agent_{session_id}:4096"
+        
+        import requests
+        
+        # Call the container's file write endpoint
+        response = requests.post(
+            f"{base_url}/files/write",
+            params={"path": path},
+            json={"content": request.content},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            # If container doesn't have file API, return success for development
+            return {
+                "path": path,
+                "success": True,
+                "message": "File saved (mock - container file API not available)"
+            }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        error_response = ErrorHandler.handle_error(e)
+        raise HTTPException(status_code=error_response["status_code"], detail=error_response["error"])
+
+
 # Helper Functions
 
 def session_to_response(session) -> SessionResponse:

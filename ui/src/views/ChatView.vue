@@ -1,15 +1,19 @@
 <template>
   <div class="h-screen flex bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50">
-      <!-- Sidebar -->
-      <SessionSidebar
-        class="flex-shrink-0 shadow-2xl"
-        @new-session="handleNewSession"
-        @settings-open="openSettings"
-      />    <!-- Main Chat Area -->
-    <div class="flex-1 flex flex-col">
-      <ChatWindow v-if="sessionStore.currentSessionId" />
-      <EmptyState v-else />
-    </div>
+    <!-- Sidebar -->
+    <SessionSidebar
+      class="flex-shrink-0 shadow-2xl"
+      @new-session="handleNewSession"
+      @settings-open="openSettings"
+    />
+
+    <!-- Main Content Area with Split View -->
+    <SplitView class="flex-1">
+      <template #chat>
+        <ChatWindow v-if="sessionStore.currentSessionId" @toggle-editor="toggleEditor" />
+        <EmptyState v-else />
+      </template>
+    </SplitView>
 
     <!-- Settings Dialog -->
     <SettingsDialog
@@ -24,16 +28,19 @@ import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from '../stores/session'
 import { useUserStore } from '../stores/user'
+import { useFileStore } from '../stores/file'
 import { backendApi } from '../services/api'
 import SessionSidebar from '../components/SessionSidebar.vue'
 import ChatWindow from '../components/ChatWindow.vue'
 import EmptyState from '../components/EmptyState.vue'
 import SettingsDialog from '../components/SettingsDialog.vue'
+import SplitView from '../components/SplitView.vue'
 
 const route = useRoute()
 const router = useRouter()
 const sessionStore = useSessionStore()
 const userStore = useUserStore()
+const fileStore = useFileStore()
 
 // Settings dialog state
 const showSettingsDialog = ref(false)
@@ -105,5 +112,9 @@ function openSettings() {
 
 function closeSettings() {
   showSettingsDialog.value = false
+}
+
+function toggleEditor() {
+  fileStore.toggleEditor()
 }
 </script>
