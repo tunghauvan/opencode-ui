@@ -17,6 +17,14 @@ export const useSessionStore = defineStore('session', () => {
     loading.value = true
     error.value = null
     try {
+      // First sync container status to ensure accurate state
+      try {
+        await backendApi.syncContainers()
+        console.log('Container status synced')
+      } catch (syncErr) {
+        console.warn('Could not sync containers:', syncErr)
+      }
+      
       const response = await backendApi.listSessions()
       sessions.value = response.sessions || []
     } catch (e) {
@@ -24,6 +32,22 @@ export const useSessionStore = defineStore('session', () => {
       console.error(e)
     } finally {
       loading.value = false
+    }
+  }
+
+  async function syncContainerStatus() {
+    try {
+      const result = await backendApi.syncContainers()
+      console.log('Container sync result:', result)
+      
+      // Refresh sessions to get updated status
+      const response = await backendApi.listSessions()
+      sessions.value = response.sessions || []
+      
+      return result
+    } catch (e) {
+      console.error('Failed to sync containers:', e)
+      throw e
     }
   }
 
@@ -190,6 +214,7 @@ export const useSessionStore = defineStore('session', () => {
     stopContainer,
     getContainerStatus,
     getContainerLogs,
-    updateSession
+    updateSession,
+    syncContainerStatus
   }
 })

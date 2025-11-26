@@ -285,6 +285,16 @@ async def get_container_status(
             session_id=session_id,
             session_service=session_service
         )
+        
+        # Also update the session record with actual container status
+        session = session_service.get_session(current_user, session_id)
+        actual_status = status.get("container_status", "unknown")
+        if session.container_status != actual_status:
+            session.container_status = actual_status
+            if actual_status in ["exited", "dead", "not_found"]:
+                session.container_id = None
+                session.container_status = "stopped"
+            db.commit()
 
         return status
     except ValueError as e:
@@ -567,6 +577,90 @@ async def get_session_messages(
     
     except HTTPException:
         raise
+    except Exception as e:
+        import traceback
+        error_msg = traceback.format_exc()
+        print(f"ERROR: {error_msg}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Container Sync Routes
+
+@backend_router.post("/containers/sync")
+async def sync_all_containers(
+    current_user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """Sync container status for all user sessions via agent-controller"""
+    try:
+        import httpx
+        from core.config import settings
+        from core.models import Session as SessionModel
+        
+        # Get all sessions for user
+        sessions = db.query(SessionModel).filter(SessionModel.user_id == current_user.id).all()
+        
+        synced = []
+        orphaned = []
+        
+        async with httpx.AsyncClient() as client:
+            for session in sessions:
+                session_id = session.session_id
+                
+                try:
+                    # Check container status via agent-controller
+                    response = await client.get(
+                        f"http://agent-controller:8001/sessions/{session_id}/status",
+                        headers={"X-Service-Secret": settings.AGENT_SERVICE_SECRET},
+                        timeout=5.0
+                    )
+                    
+                    if response.status_code == 200:
+                        status_data = response.json()
+                        actual_status = status_data.get("container_status", "unknown")
+                        actual_id = status_data.get("container_id")
+                        
+                        # Update if different
+                        if session.container_status != actual_status or (actual_id and session.container_id != actual_id):
+                            old_status = session.container_status
+                            
+                            if actual_status in ["not_found", "exited", "dead"]:
+                                session.container_id = None
+                                session.container_status = "stopped"
+                            else:
+                                if actual_id:
+                                    session.container_id = actual_id
+                                session.container_status = actual_status if actual_status == "running" else "stopped"
+                            
+                            synced.append({
+                                "session_id": session_id,
+                                "old_status": old_status,
+                                "new_status": session.container_status,
+                                "container_id": actual_id[:12] if actual_id else None
+                            })
+                    elif response.status_code == 404:
+                        # Session not in agent-controller
+                        if session.container_id:
+                            orphaned.append({
+                                "session_id": session_id,
+                                "old_container_id": session.container_id[:12] if session.container_id else None
+                            })
+                            session.container_id = None
+                            session.container_status = "stopped"
+                            
+                except Exception as e:
+                    print(f"Error checking container for {session_id}: {e}")
+        
+        db.commit()
+        
+        return {
+            "status": "success",
+            "synced_count": len(synced),
+            "synced": synced,
+            "orphaned_count": len(orphaned),
+            "orphaned": orphaned,
+            "total_sessions": len(sessions)
+        }
     except Exception as e:
         import traceback
         error_msg = traceback.format_exc()

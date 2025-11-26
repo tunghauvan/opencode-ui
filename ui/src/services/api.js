@@ -163,6 +163,12 @@ export const backendApi = {
     return response.data
   },
 
+  // Container sync
+  async syncContainers() {
+    const response = await api.post('/backend/containers/sync')
+    return response.data
+  },
+
   // Analytics
   async getSessionStats() {
     const response = await api.get('/backend/sessions/stats/overview')
@@ -282,6 +288,16 @@ export const dbApi = {
 
   async clearMessages(sessionId) {
     const response = await api.delete(`/db/sessions/${sessionId}/messages`)
+    return response.data
+  },
+
+  async deleteMessagesAfter(sessionId, messageId) {
+    const response = await api.delete(`/db/sessions/${sessionId}/messages/after/${messageId}`)
+    return response.data
+  },
+
+  async deleteMessagesAfterFromAgent(sessionId, messageId) {
+    const response = await api.delete(`/backend/sessions/${sessionId}/messages/after/${messageId}`)
     return response.data
   }
 }

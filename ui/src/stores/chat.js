@@ -71,30 +71,11 @@ export const useChatStore = defineStore('chat', () => {
 
     try {
       // Use backend API for chat
-      const response = await backendApi.sendMessage(sessionId, prompt)
-
-      // Add assistant response
-      if (response.content || (response.parts && response.parts.length > 0)) {
-        const assistantMessage = {
-          info: {
-            id: response.info?.id || `msg_${Date.now()}`,
-            role: 'assistant',
-            time: { created: Date.now() }
-          },
-          parts: response.parts || [{
-            type: 'text',
-            text: response.content
-          }]
-        }
-        addMessage(sessionId, assistantMessage)
-        
-        // Save assistant message to database for persistence
-        try {
-          await saveMessageToDb(sessionId, assistantMessage)
-        } catch (dbErr) {
-          console.warn('Could not save assistant message to DB:', dbErr)
-        }
-      }
+      await backendApi.sendMessage(sessionId, prompt)
+      
+      // Reload full messages from agent to get complete response with tool actions
+      // The backend response might not include all parts (like tool executions)
+      await reloadMessagesFromAgent(sessionId)
 
       // Sync all messages to database after successful send
       await syncMessagesToDb(sessionId)
@@ -262,6 +243,23 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  async function reloadMessagesFromAgent(sessionId) {
+    try {
+      console.log(`Reloading messages from agent for session ${sessionId}...`)
+      const response = await backendApi.getMessages(sessionId)
+      
+      if (response.status === 'success' && response.messages && response.messages.length > 0) {
+        setMessages(sessionId, response.messages)
+        console.log(`Reloaded ${response.messages.length} messages from agent for session ${sessionId}`)
+        return true
+      }
+      return false
+    } catch (e) {
+      console.error('Failed to reload messages from agent:', e)
+      return false
+    }
+  }
+
   async function saveMessageToDb(sessionId, messageData) {
     try {
       await dbApi.saveMessage(sessionId, messageData)
@@ -275,6 +273,101 @@ export const useChatStore = defineStore('chat', () => {
       await dbApi.clearMessages(sessionId)
     } catch (e) {
       console.error('Failed to clear messages from database:', e)
+    }
+  }
+
+  async function editAndRetryMessage(sessionId, messageIndex, newText) {
+    loading.value = true
+    error.value = null
+    
+    try {
+      const messages = messagesBySession.value[sessionId]
+      if (!messages || messageIndex < 0 || messageIndex >= messages.length) {
+        throw new Error('Invalid message index')
+      }
+
+      const originalMessage = messages[messageIndex]
+      if (originalMessage.info?.role !== 'user') {
+        throw new Error('Can only edit user messages')
+      }
+
+      // Get message IDs to delete (all messages after the edited one)
+      const messagesToDelete = messages.slice(messageIndex + 1)
+      const editedMessageId = originalMessage.info?.id
+      
+      // Delete messages after the edited one from BOTH database AND OpenCode agent
+      if (messagesToDelete.length > 0) {
+        // Delete from local database
+        try {
+          await dbApi.deleteMessagesAfter(sessionId, editedMessageId)
+          console.log(`Deleted ${messagesToDelete.length} messages from DB after index ${messageIndex}`)
+        } catch (dbErr) {
+          console.warn('Could not delete messages from DB:', dbErr)
+        }
+        
+        // Delete from OpenCode agent server
+        try {
+          await dbApi.deleteMessagesAfterFromAgent(sessionId, editedMessageId)
+          console.log(`Deleted messages from OpenCode agent after index ${messageIndex}`)
+        } catch (agentErr) {
+          console.warn('Could not delete messages from OpenCode agent:', agentErr)
+        }
+      }
+      
+      // Update local messages array - remove messages after edited one
+      messagesBySession.value[sessionId] = messages.slice(0, messageIndex)
+      
+      // Create updated user message with new text
+      const updatedUserMessage = {
+        info: {
+          id: editedMessageId || `msg_user_${Date.now()}`,
+          role: 'user',
+          time: { created: Date.now() }
+        },
+        parts: [{
+          type: 'text',
+          text: newText
+        }]
+      }
+      
+      // Add the updated user message
+      addMessage(sessionId, updatedUserMessage)
+      
+      // Save updated user message to database
+      try {
+        await dbApi.saveMessage(sessionId, updatedUserMessage)
+      } catch (dbErr) {
+        console.warn('Could not save updated user message to DB:', dbErr)
+      }
+      
+      // Send the new message to get a fresh response
+      await backendApi.sendMessage(sessionId, newText)
+      
+      // Reload full messages from agent to get complete response with tool actions
+      await reloadMessagesFromAgent(sessionId)
+
+      // Sync all messages to database
+      await syncMessagesToDb(sessionId)
+      
+    } catch (e) {
+      error.value = 'Failed to edit and retry message'
+      console.error('Edit and retry error:', e)
+
+      // Add error message
+      addMessage(sessionId, {
+        info: {
+          role: 'assistant',
+          time: { created: Date.now() }
+        },
+        parts: [{
+          type: 'text',
+          text: `Error: ${e.response?.data?.detail || e.message || 'Failed to edit and retry message'}`
+        }]
+      })
+      
+      throw e
+    } finally {
+      loading.value = false
     }
   }
 
@@ -355,6 +448,7 @@ export const useChatStore = defineStore('chat', () => {
     setModel,
     syncMessagesToDb,
     saveMessageToDb,
-    clearMessagesFromDb
+    clearMessagesFromDb,
+    editAndRetryMessage
   }
 })

@@ -97,11 +97,61 @@ class ContainerRunRequest(BaseModel):
 class SessionListResponse(BaseModel):
     sessions: List[Dict[str, Any]]
 
+def cleanup_orphan_containers():
+    """Find and remove Docker containers that don't have corresponding session records"""
+    try:
+        # Get all containers from Docker and filter by name pattern
+        all_containers = docker_client.containers.list(all=True)
+        agent_containers = [c for c in all_containers if c.name.startswith("agent_")]
+        
+        if not agent_containers:
+            print("No agent containers found in Docker")
+            return
+        
+        print(f"Found {len(agent_containers)} agent containers: {[c.name for c in agent_containers]}")
+        
+        # Get all sessions from DB
+        db_sessions = list_sessions_from_db()
+        known_session_ids = {s.get("session_id") for s in db_sessions}
+        print(f"Known session IDs in DB: {known_session_ids}")
+        
+        orphan_count = 0
+        for container in agent_containers:
+            # Extract session_id from container name (format: agent_{session_id})
+            container_name = container.name
+            session_id = container_name[6:]  # Remove "agent_" prefix
+            
+            if session_id not in known_session_ids:
+                print(f"Found orphan container: {container_name} (session {session_id} not in DB)")
+                try:
+                    container.stop(timeout=5)
+                    container.remove(force=True)
+                    print(f"Removed orphan container: {container_name}")
+                    orphan_count += 1
+                except Exception as e:
+                    print(f"Failed to remove orphan container {container_name}: {e}")
+            else:
+                print(f"Container {container_name} has valid session in DB")
+        
+        if orphan_count > 0:
+            print(f"Cleaned up {orphan_count} orphan containers")
+        else:
+            print("No orphan containers found")
+            
+    except Exception as e:
+        import traceback
+        print(f"Error during orphan container cleanup: {e}")
+        traceback.print_exc()
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize on startup"""
     ensure_volume_exists()
     init_db()  # Initialize database tables
+    
+    # Clean up orphan containers on startup
+    cleanup_orphan_containers()
 
 @app.get("/health")
 async def health_check():
@@ -367,6 +417,74 @@ async def get_session_logs(session_id: str, tail: int = 100):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get logs: {str(e)}")
+
+
+@app.get("/containers/running", dependencies=[Depends(verify_service_secret)])
+async def get_running_containers():
+    """Get all running agent containers from Docker"""
+    try:
+        # Get all containers and filter by name pattern (filter may not work reliably)
+        all_containers = docker_client.containers.list(all=True)
+        agent_containers = [c for c in all_containers if c.name.startswith("agent_")]
+        
+        container_list = []
+        for container in agent_containers:
+            container_name = container.name
+            session_id = container_name[6:]  # Remove "agent_" prefix
+            
+            container_list.append({
+                "container_id": container.id[:12],
+                "container_name": container_name,
+                "session_id": session_id,
+                "status": container.status,
+                "created": container.attrs.get("Created", ""),
+            })
+        
+        return {"containers": container_list, "count": len(container_list)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list containers: {str(e)}")
+
+
+@app.post("/containers/cleanup-orphans", dependencies=[Depends(verify_service_secret)])
+async def cleanup_orphans():
+    """Manually trigger orphan container cleanup"""
+    try:
+        # Get all containers and filter by name pattern
+        all_containers = docker_client.containers.list(all=True)
+        agent_containers = [c for c in all_containers if c.name.startswith("agent_")]
+        
+        # Get all sessions from DB
+        db_sessions = list_sessions_from_db()
+        known_session_ids = {s.get("session_id") for s in db_sessions}
+        
+        orphans_removed = []
+        for container in agent_containers:
+            container_name = container.name
+            session_id = container_name[6:]  # Remove "agent_" prefix
+            
+            if session_id not in known_session_ids:
+                try:
+                    container.stop(timeout=5)
+                    container.remove(force=True)
+                    orphans_removed.append({
+                        "container_name": container_name,
+                        "session_id": session_id,
+                        "status": "removed"
+                    })
+                except Exception as e:
+                    orphans_removed.append({
+                        "container_name": container_name,
+                        "session_id": session_id,
+                        "status": "failed",
+                        "error": str(e)
+                    })
+        
+        return {
+            "orphans_cleaned": len(orphans_removed),
+            "details": orphans_removed
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup orphans: {str(e)}")
 
 
 @app.get("/sessions/{session_id}/status", dependencies=[Depends(verify_service_secret)])

@@ -141,24 +141,96 @@ def run_once(threshold_seconds: int, dry_run: bool) -> None:
 
     if not idle_sessions:
         logging.info("No idle sessions older than %s seconds", threshold_seconds)
-        return
+    else:
+        logging.info("Found %d idle sessions", len(idle_sessions))
 
-    logging.info("Found %d idle sessions", len(idle_sessions))
+        for session in idle_sessions:
+            last_activity = session.last_activity.isoformat() if session.last_activity else "<unknown>"
+            logging.info(
+                "Session %s last active at %s, container=%s",
+                session.session_id,
+                last_activity,
+                session.container_id,
+            )
 
-    for session in idle_sessions:
-        last_activity = session.last_activity.isoformat() if session.last_activity else "<unknown>"
-        logging.info(
-            "Session %s last active at %s, container=%s",
-            session.session_id,
-            last_activity,
-            session.container_id,
+            if dry_run:
+                logging.info("Dry run: skipping stop for %s", session.session_id)
+                continue
+
+            stop_session(session)
+    
+    # Also cleanup orphan containers
+    cleanup_orphan_containers(dry_run)
+
+
+def cleanup_orphan_containers(dry_run: bool) -> None:
+    """Find and cleanup containers that don't have corresponding session records"""
+    headers = {"X-Service-Secret": SERVICE_SECRET}
+    
+    try:
+        # Get running containers from agent-controller
+        response = requests.get(
+            f"{AGENT_CONTROLLER_URL}/containers/running",
+            headers=headers,
+            timeout=REQUEST_TIMEOUT
         )
-
-        if dry_run:
-            logging.info("Dry run: skipping stop for %s", session.session_id)
-            continue
-
-        stop_session(session)
+        
+        if response.status_code != 200:
+            logging.warning("Failed to get running containers: %s", response.status_code)
+            return
+        
+        containers = response.json().get("containers", [])
+        
+        # Get sessions from agent-controller
+        sessions_response = requests.get(
+            f"{AGENT_CONTROLLER_URL}/sessions",
+            headers=headers,
+            timeout=REQUEST_TIMEOUT
+        )
+        
+        if sessions_response.status_code != 200:
+            logging.warning("Failed to get sessions: %s", sessions_response.status_code)
+            return
+        
+        known_sessions = {s.get("session_id") for s in sessions_response.json().get("sessions", [])}
+        
+        # Find orphans
+        orphans = [c for c in containers if c.get("session_id") not in known_sessions]
+        
+        if not orphans:
+            logging.debug("No orphan containers found")
+            return
+        
+        logging.info("Found %d orphan containers", len(orphans))
+        
+        for orphan in orphans:
+            logging.info(
+                "Orphan container: %s (session %s, status: %s)",
+                orphan.get("container_name"),
+                orphan.get("session_id"),
+                orphan.get("status")
+            )
+            
+            if dry_run:
+                logging.info("Dry run: skipping cleanup for %s", orphan.get("container_name"))
+                continue
+        
+        # Trigger cleanup via agent-controller
+        if not dry_run and orphans:
+            cleanup_response = requests.post(
+                f"{AGENT_CONTROLLER_URL}/containers/cleanup-orphans",
+                headers=headers,
+                timeout=REQUEST_TIMEOUT
+            )
+            
+            if cleanup_response.status_code == 200:
+                result = cleanup_response.json()
+                logging.info("Cleaned up %d orphan containers", result.get("orphans_cleaned", 0))
+            else:
+                logging.warning("Failed to cleanup orphans: %s", cleanup_response.status_code)
+                
+    except requests.RequestException as exc:
+        logging.warning("Error during orphan cleanup: %s", exc)
 
 
 def main() -> None:

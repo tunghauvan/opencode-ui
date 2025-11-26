@@ -64,6 +64,69 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Startup event to sync container status
+@app.on_event("startup")
+async def startup_sync_containers():
+    """Sync container status via agent-controller on startup"""
+    import logging
+    import httpx
+    
+    logging.info("Starting container sync via agent-controller...")
+    
+    try:
+        # Get database session
+        from core.database import SessionLocal
+        db = SessionLocal()
+        
+        try:
+            # Get all sessions with container_id
+            sessions_with_containers = db.query(SessionModel).filter(
+                SessionModel.container_id.isnot(None)
+            ).all()
+            
+            logging.info(f"Found {len(sessions_with_containers)} sessions with container references")
+            
+            async with httpx.AsyncClient() as client:
+                for session in sessions_with_containers:
+                    try:
+                        # Check container status via agent-controller
+                        response = await client.get(
+                            f"http://agent-controller:8001/sessions/{session.session_id}/status",
+                            headers={"X-Service-Secret": settings.AGENT_SERVICE_SECRET},
+                            timeout=5.0
+                        )
+                        
+                        if response.status_code == 200:
+                            status_data = response.json()
+                            actual_status = status_data.get("container_status", "unknown")
+                            
+                            # Update if status changed
+                            if actual_status in ["not_found", "exited", "dead"]:
+                                logging.info(f"Session {session.session_id}: container gone, clearing reference")
+                                session.container_id = None
+                                session.container_status = "stopped"
+                            elif actual_status != session.container_status:
+                                logging.info(f"Session {session.session_id}: updating status to {actual_status}")
+                                session.container_status = actual_status
+                        elif response.status_code == 404:
+                            logging.info(f"Session {session.session_id}: not found in agent-controller, clearing")
+                            session.container_id = None
+                            session.container_status = "stopped"
+                            
+                    except Exception as e:
+                        logging.warning(f"Error checking session {session.session_id}: {e}")
+            
+            db.commit()
+            logging.info("Container sync completed")
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logging.error(f"Error during container sync: {e}")
+        import traceback
+        traceback.print_exc()
+
 # Include backend routes
 app.include_router(backend_router)
 
@@ -1342,6 +1405,150 @@ async def clear_session_messages(
         import logging
         logging.error(f"Error clearing messages: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to clear messages: {str(e)}")
+
+
+@app.delete("/api/db/sessions/{session_id}/messages/after/{message_id}")
+async def delete_messages_after(
+    session_id: str,
+    message_id: str,
+    current_user: User = Depends(get_current_user_dependency),
+    db: Session = Depends(get_db)
+):
+    """Delete all messages after a specific message (for edit/retry functionality)"""
+    try:
+        import logging
+        logging.info(f"Delete messages after: session={session_id}, message_id={message_id}")
+        
+        # Verify session belongs to user
+        session = db.query(SessionModel).filter(
+            SessionModel.session_id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Find the reference message
+        ref_message = db.query(Message).filter(
+            Message.session_id == session_id,
+            Message.message_id == message_id
+        ).first()
+        
+        if not ref_message:
+            # Message not found - might be a new message ID, delete nothing
+            logging.info(f"Reference message {message_id} not found, nothing to delete")
+            return {"status": "success", "deleted_count": 0}
+        
+        # Get the timestamp of the reference message
+        ref_timestamp = ref_message.created_timestamp
+        
+        # Delete all messages with timestamp greater than the reference message
+        # (messages that came after the message being edited)
+        deleted_count = db.query(Message).filter(
+            Message.session_id == session_id,
+            Message.created_timestamp > ref_timestamp
+        ).delete()
+        
+        # Also delete the original message since we'll replace it
+        db.query(Message).filter(
+            Message.session_id == session_id,
+            Message.message_id == message_id
+        ).delete()
+        deleted_count += 1
+        
+        db.commit()
+        
+        logging.info(f"Deleted {deleted_count} messages after {message_id}")
+        return {"status": "success", "deleted_count": deleted_count}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logging.error(f"Error deleting messages after {message_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete messages: {str(e)}")
+
+
+@app.delete("/api/backend/sessions/{session_id}/messages/after/{message_id}")
+async def delete_messages_after_from_agent(
+    session_id: str,
+    message_id: str,
+    current_user: User = Depends(get_current_user_dependency),
+    db: Session = Depends(get_db)
+):
+    """Delete all messages after a specific message from the OpenCode agent server"""
+    import logging
+    import requests
+    
+    try:
+        logging.info(f"Delete messages from agent: session={session_id}, message_id={message_id}")
+        
+        # Get the session to find the container
+        session = db.query(SessionModel).filter(
+            SessionModel.session_id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        if not session.container_id or not session.opencode_session_id:
+            logging.info("No container or OpenCode session, nothing to delete from agent")
+            return {"status": "success", "deleted_count": 0, "message": "No active agent session"}
+        
+        base_url = session.base_url or f"http://agent_{session_id}:4096"
+        opencode_session_id = session.opencode_session_id
+        
+        # First, get current messages from agent to find which ones to delete
+        try:
+            messages_url = f"{base_url}/session/{opencode_session_id}/message"
+            response = requests.get(messages_url, timeout=10)
+            
+            if response.status_code != 200:
+                logging.warning(f"Could not get messages from agent: {response.status_code}")
+                return {"status": "partial", "deleted_count": 0, "message": "Could not fetch messages from agent"}
+            
+            messages = response.json()
+            if not isinstance(messages, list):
+                messages = messages.get('messages', [])
+            
+            # Find messages to delete (after the specified message)
+            found_message = False
+            messages_to_delete = []
+            
+            for msg in messages:
+                msg_id = msg.get('info', {}).get('id')
+                if found_message:
+                    messages_to_delete.append(msg_id)
+                elif msg_id == message_id:
+                    found_message = True
+                    messages_to_delete.append(msg_id)  # Include the edited message itself
+            
+            # Delete each message from agent
+            deleted_count = 0
+            for msg_id in messages_to_delete:
+                try:
+                    delete_url = f"{base_url}/session/{opencode_session_id}/message/{msg_id}"
+                    del_response = requests.delete(delete_url, timeout=10)
+                    if del_response.status_code in [200, 204]:
+                        deleted_count += 1
+                        logging.info(f"Deleted message {msg_id} from agent")
+                    else:
+                        logging.warning(f"Failed to delete message {msg_id}: {del_response.status_code}")
+                except Exception as e:
+                    logging.warning(f"Error deleting message {msg_id}: {e}")
+            
+            logging.info(f"Deleted {deleted_count} messages from agent after {message_id}")
+            return {"status": "success", "deleted_count": deleted_count}
+            
+        except requests.exceptions.RequestException as e:
+            logging.warning(f"Could not connect to agent: {e}")
+            return {"status": "partial", "deleted_count": 0, "message": f"Agent not reachable: {str(e)}"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error deleting messages from agent: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete messages from agent: {str(e)}")
 
 
 if __name__ == "__main__":
