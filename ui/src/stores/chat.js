@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import { opencodeApi, backendApi } from '../services/api'
+import { opencodeApi, backendApi, dbApi } from '../services/api'
 
 export const useChatStore = defineStore('chat', () => {
   // Map of sessionId -> messages array
@@ -9,6 +9,7 @@ export const useChatStore = defineStore('chat', () => {
   const error = ref(null)
   const streaming = ref(false)
   const messagesLoading = ref(false)
+  const syncing = ref(false)
   
   // Model selection state
   const selectedProvider = ref('github-copilot')
@@ -48,8 +49,9 @@ export const useChatStore = defineStore('chat', () => {
     streaming.value = false
 
     // Add user message immediately for instant display
-    addMessage(sessionId, {
+    const userMessage = {
       info: {
+        id: `msg_user_${Date.now()}`,
         role: 'user',
         time: { created: Date.now() }
       },
@@ -57,7 +59,15 @@ export const useChatStore = defineStore('chat', () => {
         type: 'text',
         text: prompt
       }]
-    })
+    }
+    addMessage(sessionId, userMessage)
+    
+    // Save user message to database immediately
+    try {
+      await saveMessageToDb(sessionId, userMessage)
+    } catch (dbErr) {
+      console.warn('Could not save user message to DB:', dbErr)
+    }
 
     try {
       // Use backend API for chat
@@ -65,8 +75,9 @@ export const useChatStore = defineStore('chat', () => {
 
       // Add assistant response
       if (response.content || (response.parts && response.parts.length > 0)) {
-        addMessage(sessionId, {
+        const assistantMessage = {
           info: {
+            id: response.info?.id || `msg_${Date.now()}`,
             role: 'assistant',
             time: { created: Date.now() }
           },
@@ -74,10 +85,19 @@ export const useChatStore = defineStore('chat', () => {
             type: 'text',
             text: response.content
           }]
-        })
+        }
+        addMessage(sessionId, assistantMessage)
+        
+        // Save assistant message to database for persistence
+        try {
+          await saveMessageToDb(sessionId, assistantMessage)
+        } catch (dbErr) {
+          console.warn('Could not save assistant message to DB:', dbErr)
+        }
       }
 
-      // Messages are now managed locally, no need to reload from API
+      // Sync all messages to database after successful send
+      await syncMessagesToDb(sessionId)
     } catch (e) {
       error.value = 'Failed to send message'
       console.error(e)
@@ -166,28 +186,95 @@ export const useChatStore = defineStore('chat', () => {
 
   async function loadMessages(sessionId) {
     messagesLoading.value = true
+    let loadedFromDb = false
+    
     try {
-      // Fetch messages from backend API (which gets them from OpenCode agent)
-      const response = await backendApi.getMessages(sessionId)
-      
-      if (response.status === 'success' && response.messages) {
-        // Messages from OpenCode agent are already in the correct format
-        setMessages(sessionId, response.messages)
-        console.log(`Loaded ${response.messages.length} messages for session ${sessionId}`)
-      } else {
-        // Initialize empty array if no messages
-        if (!messagesBySession.value[sessionId]) {
-          messagesBySession.value[sessionId] = []
+      // Always try to load from local database first (works even when container is stopped)
+      try {
+        console.log(`Attempting to load messages from database for session ${sessionId}`)
+        const dbResponse = await dbApi.getMessages(sessionId)
+        console.log('Database response:', dbResponse)
+        if (dbResponse.messages && dbResponse.messages.length > 0) {
+          setMessages(sessionId, dbResponse.messages)
+          console.log(`Loaded ${dbResponse.messages.length} messages from database for session ${sessionId}`)
+          loadedFromDb = true
+        } else {
+          console.log('No messages found in database')
+        }
+      } catch (dbError) {
+        console.log('Could not load from database:', dbError.response?.status, dbError.message)
+        // 404 means session not found, which is expected for new sessions
+        if (dbError.response?.status !== 404) {
+          console.error('Database error details:', dbError.response?.data)
         }
       }
+      
+      // Try to sync with OpenCode agent (if container is running)
+      // This will get any new messages that haven't been saved to DB yet
+      try {
+        console.log(`Attempting to load messages from agent for session ${sessionId}`)
+        const response = await backendApi.getMessages(sessionId)
+        console.log('Agent response:', response)
+        
+        if (response.status === 'success' && response.messages && response.messages.length > 0) {
+          // If we got messages from agent, use those (they're more up-to-date)
+          setMessages(sessionId, response.messages)
+          console.log(`Loaded ${response.messages.length} messages from agent for session ${sessionId}`)
+          
+          // Sync to database for persistence
+          await syncMessagesToDb(sessionId)
+        }
+      } catch (agentError) {
+        // Agent might not be available (container stopped), that's OK if we loaded from DB
+        if (!loadedFromDb) {
+          console.log('Agent not available and no messages in database')
+        } else {
+          console.log('Agent not available, using cached messages from database')
+        }
+      }
+      
+      // Initialize empty array if no messages from either source
+      if (!messagesBySession.value[sessionId]) {
+        messagesBySession.value[sessionId] = []
+      }
     } catch (e) {
-      console.error('Failed to load messages from server:', e)
+      console.error('Failed to load messages:', e)
       // Ensure messages array exists even on error
       if (!messagesBySession.value[sessionId]) {
         messagesBySession.value[sessionId] = []
       }
     } finally {
       messagesLoading.value = false
+    }
+  }
+
+  async function syncMessagesToDb(sessionId) {
+    syncing.value = true
+    try {
+      console.log(`Syncing messages to database for session ${sessionId}...`)
+      const response = await dbApi.syncMessages(sessionId, false)
+      console.log(`Synced messages to database: ${response.new_count} new, ${response.updated_count} updated`)
+      return response
+    } catch (e) {
+      console.error('Failed to sync messages to database:', e.response?.data || e.message)
+    } finally {
+      syncing.value = false
+    }
+  }
+
+  async function saveMessageToDb(sessionId, messageData) {
+    try {
+      await dbApi.saveMessage(sessionId, messageData)
+    } catch (e) {
+      console.error('Failed to save message to database:', e)
+    }
+  }
+
+  async function clearMessagesFromDb(sessionId) {
+    try {
+      await dbApi.clearMessages(sessionId)
+    } catch (e) {
+      console.error('Failed to clear messages from database:', e)
     }
   }
 
@@ -250,6 +337,7 @@ export const useChatStore = defineStore('chat', () => {
     error,
     streaming,
     messagesLoading,
+    syncing,
     selectedProvider,
     selectedModel,
     availableModels,
@@ -264,6 +352,9 @@ export const useChatStore = defineStore('chat', () => {
     loadMessages,
     initializeSession,
     fetchModels,
-    setModel
+    setModel,
+    syncMessagesToDb,
+    saveMessageToDb,
+    clearMessagesFromDb
   }
 })

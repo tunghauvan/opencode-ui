@@ -2,7 +2,7 @@
 Schemas for OAuth and authentication
 """
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 
@@ -78,3 +78,83 @@ class SessionResponse(BaseModel):
 class SessionListResponse(BaseModel):
     """Session list response schema"""
     sessions: list[SessionResponse]
+
+
+# Message schemas matching OpenCode format
+class MessagePartText(BaseModel):
+    """Text part of a message"""
+    type: str = "text"
+    text: str
+
+
+class MessagePartToolUse(BaseModel):
+    """Tool use part of a message"""
+    type: str = "tool_use"
+    id: str
+    name: str
+    input: Dict[str, Any]
+
+
+class MessagePartToolResult(BaseModel):
+    """Tool result part of a message"""
+    type: str = "tool_result"
+    id: str
+    content: Any
+
+
+class MessageTimeInfo(BaseModel):
+    """Time information for a message"""
+    created: Optional[int] = None  # Unix timestamp in milliseconds
+
+
+class MessageModelInfo(BaseModel):
+    """Model information for a message"""
+    providerID: Optional[str] = None
+    modelID: Optional[str] = None
+
+
+class MessageTokensInfo(BaseModel):
+    """Token usage information"""
+    input: Optional[int] = None
+    output: Optional[int] = None
+
+
+class MessageInfo(BaseModel):
+    """Message info matching OpenCode format"""
+    id: str
+    sessionID: str
+    role: str  # "user" or "assistant"
+    time: Optional[MessageTimeInfo] = None
+    model: Optional[MessageModelInfo] = None
+    tokens: Optional[MessageTokensInfo] = None
+    cost: Optional[float] = None
+
+    class Config:
+        extra = "ignore"  # Ignore extra fields
+
+
+class MessageResponse(BaseModel):
+    """Message response matching OpenCode format"""
+    info: MessageInfo
+    parts: List[Dict[str, Any]]
+
+    class Config:
+        from_attributes = True
+        extra = "ignore"  # Ignore extra fields
+
+
+class MessageListResponse(BaseModel):
+    """List of messages response"""
+    messages: List[MessageResponse]
+
+
+class SyncMessagesRequest(BaseModel):
+    """Request to sync messages from OpenCode agent"""
+    force: bool = False  # Force full resync
+
+
+class SyncMessagesResponse(BaseModel):
+    """Response after syncing messages"""
+    synced_count: int
+    new_count: int
+    updated_count: int

@@ -20,6 +20,7 @@ User = models.User
 Base = models.Base
 Agent = models.Agent
 SessionModel = models.Session
+Message = models.Message
 from core.github_oauth import get_github_oauth_service
 from core.schemas import (
     LoginResponse, 
@@ -28,7 +29,11 @@ from core.schemas import (
     TokenRefreshResponse,
     SessionCreateRequest,
     SessionResponse,
-    SessionListResponse
+    SessionListResponse,
+    MessageResponse,
+    MessageListResponse,
+    SyncMessagesRequest,
+    SyncMessagesResponse
 )
 from backend.routes import backend_router
 
@@ -1100,6 +1105,244 @@ async def agent_oauth_callback(code: str = None, state: str = None, db: Session 
             url=f"{home_url}/agent-auth?error={str(e)}",
             status_code=302
         )
+
+
+# =============================================================================
+# Message History Management Endpoints
+# =============================================================================
+
+@app.get("/api/db/sessions/{session_id}/messages")
+async def get_db_messages(
+    session_id: str,
+    current_user: User = Depends(get_current_user_dependency),
+    db: Session = Depends(get_db)
+):
+    """Get all messages from the database for a session"""
+    import logging
+    logging.info(f"=== GET DB MESSAGES ===")
+    logging.info(f"Session ID requested: {session_id}")
+    logging.info(f"Current user ID: {current_user.id}")
+    
+    try:
+        # Verify session belongs to user
+        session = db.query(SessionModel).filter(
+            SessionModel.session_id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+        
+        logging.info(f"Session found: {session is not None}")
+        
+        if not session:
+            # Debug: check if session exists for other users
+            any_session = db.query(SessionModel).filter(SessionModel.session_id == session_id).first()
+            if any_session:
+                logging.warning(f"Session {session_id} exists but belongs to user {any_session.user_id}, not {current_user.id}")
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Get messages ordered by created_timestamp
+        messages = db.query(Message).filter(
+            Message.session_id == session_id
+        ).order_by(Message.created_timestamp.asc()).all()
+        
+        logging.info(f"Found {len(messages)} messages in database")
+        
+        # Convert to OpenCode format and return as plain dict
+        return {
+            "messages": [msg.to_opencode_format() for msg in messages]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logging.error(f"Error getting messages: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get messages: {str(e)}")
+
+
+@app.post("/api/db/sessions/{session_id}/messages/sync", response_model=SyncMessagesResponse)
+async def sync_messages(
+    session_id: str,
+    request: SyncMessagesRequest = None,
+    current_user: User = Depends(get_current_user_dependency),
+    db: Session = Depends(get_db)
+):
+    """
+    Sync messages from OpenCode agent server to local database.
+    This fetches messages from the agent and stores them locally for persistence.
+    """
+    import logging
+    logging.info(f"=== SYNC MESSAGES ===")
+    logging.info(f"Session ID: {session_id}")
+    logging.info(f"User ID: {current_user.id}")
+    
+    try:
+        # Verify session belongs to user
+        session = db.query(SessionModel).filter(
+            SessionModel.session_id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            logging.warning(f"Session {session_id} not found for user {current_user.id}")
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        logging.info(f"Session found. OpenCode session ID: {session.opencode_session_id}")
+        logging.info(f"Base URL: {session.base_url}")
+        
+        # Get OpenCode session ID
+        opencode_session_id = session.opencode_session_id or session_id
+        
+        # Get the agent service for this session
+        from core.opencode_client import get_opencode_service
+        base_url = session.base_url or settings.OPENCODE_BASE_URL
+        agent_service = get_opencode_service(base_url=base_url)
+        
+        # Fetch messages from OpenCode agent
+        try:
+            logging.info(f"Fetching messages from agent at {base_url} for session {opencode_session_id}")
+            opencode_messages = agent_service.get_messages(opencode_session_id)
+            logging.info(f"Received {len(opencode_messages) if opencode_messages else 0} messages from agent")
+        except Exception as e:
+            logging.warning(f"Could not fetch messages from agent: {e}")
+            opencode_messages = []
+        
+        if not opencode_messages:
+            logging.info("No messages to sync")
+            return SyncMessagesResponse(synced_count=0, new_count=0, updated_count=0)
+        
+        # Get existing message IDs
+        existing_ids = set(
+            msg.message_id for msg in 
+            db.query(Message.message_id).filter(Message.session_id == session_id).all()
+        )
+        
+        new_count = 0
+        updated_count = 0
+        
+        for msg_data in opencode_messages:
+            info = msg_data.get("info", {})
+            message_id = info.get("id")
+            
+            if not message_id:
+                continue
+            
+            if message_id in existing_ids:
+                # Message exists, skip (or update if force=True)
+                if request and request.force:
+                    # Update existing message
+                    existing_msg = db.query(Message).filter(
+                        Message.message_id == message_id
+                    ).first()
+                    if existing_msg:
+                        import json
+                        existing_msg.parts = json.dumps(msg_data.get("parts", []))
+                        updated_count += 1
+            else:
+                # New message, create it
+                new_message = Message.from_opencode_format(msg_data, session_id)
+                db.add(new_message)
+                new_count += 1
+        
+        db.commit()
+        
+        return SyncMessagesResponse(
+            synced_count=new_count + updated_count,
+            new_count=new_count,
+            updated_count=updated_count
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logging.error(f"Error syncing messages: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to sync messages: {str(e)}")
+
+
+@app.post("/api/db/sessions/{session_id}/messages")
+async def save_message(
+    session_id: str,
+    message_data: Dict[str, Any],
+    current_user: User = Depends(get_current_user_dependency),
+    db: Session = Depends(get_db)
+):
+    """
+    Save a single message to the database.
+    Used to store messages as they are sent/received in real-time.
+    """
+    try:
+        # Verify session belongs to user
+        session = db.query(SessionModel).filter(
+            SessionModel.session_id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        info = message_data.get("info", {})
+        message_id = info.get("id")
+        
+        if not message_id:
+            raise HTTPException(status_code=400, detail="Message ID is required")
+        
+        # Check if message already exists
+        existing_msg = db.query(Message).filter(
+            Message.message_id == message_id
+        ).first()
+        
+        if existing_msg:
+            # Update existing message
+            import json
+            existing_msg.parts = json.dumps(message_data.get("parts", []))
+            existing_msg.updated_at = datetime.utcnow()
+            db.commit()
+            return {"status": "updated", "message_id": message_id}
+        
+        # Create new message
+        new_message = Message.from_opencode_format(message_data, session_id)
+        db.add(new_message)
+        db.commit()
+        
+        return {"status": "created", "message_id": message_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logging.error(f"Error saving message: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to save message: {str(e)}")
+
+
+@app.delete("/api/db/sessions/{session_id}/messages")
+async def clear_session_messages(
+    session_id: str,
+    current_user: User = Depends(get_current_user_dependency),
+    db: Session = Depends(get_db)
+):
+    """Clear all messages for a session from the database"""
+    try:
+        # Verify session belongs to user
+        session = db.query(SessionModel).filter(
+            SessionModel.session_id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Delete all messages for this session
+        deleted_count = db.query(Message).filter(
+            Message.session_id == session_id
+        ).delete()
+        
+        db.commit()
+        
+        return {"status": "success", "deleted_count": deleted_count}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logging.error(f"Error clearing messages: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear messages: {str(e)}")
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

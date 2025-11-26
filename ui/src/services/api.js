@@ -236,4 +236,54 @@ export const backendApi = {
   }
 }
 
+// Database-backed API for persistent storage
+export const dbApi = {
+  // Session management (database-backed)
+  async listSessions() {
+    const response = await api.get('/db/sessions')
+    return response.data
+  },
+
+  async createSession(sessionData = {}) {
+    const response = await api.post('/db/sessions', sessionData)
+    return response.data
+  },
+
+  async getSession(sessionId) {
+    const response = await api.get(`/db/sessions/${sessionId}`)
+    return response.data
+  },
+
+  async updateSession(sessionId, data) {
+    const response = await api.put(`/db/sessions/${sessionId}`, data)
+    return response.data
+  },
+
+  async deleteSession(sessionId) {
+    const response = await api.delete(`/db/sessions/${sessionId}`)
+    return response.data
+  },
+
+  // Message history (database-backed)
+  async getMessages(sessionId) {
+    const response = await api.get(`/db/sessions/${sessionId}/messages`)
+    return response.data
+  },
+
+  async saveMessage(sessionId, messageData) {
+    const response = await api.post(`/db/sessions/${sessionId}/messages`, messageData)
+    return response.data
+  },
+
+  async syncMessages(sessionId, force = false) {
+    const response = await api.post(`/db/sessions/${sessionId}/messages/sync`, { force })
+    return response.data
+  },
+
+  async clearMessages(sessionId) {
+    const response = await api.delete(`/db/sessions/${sessionId}/messages`)
+    return response.data
+  }
+}
+
 export default api

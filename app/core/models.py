@@ -1,7 +1,7 @@
 """
 User and GitHub token models
 """
-from sqlalchemy import Column, String, DateTime, Boolean, Integer, ForeignKey
+from sqlalchemy import Column, String, DateTime, Boolean, Integer, ForeignKey, Text, BigInteger
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
@@ -120,9 +120,120 @@ class Session(Base):
     def __repr__(self):
         return f"<Session(session_id={self.session_id}, user_id={self.user_id}, status={self.status})>"
 
-# Explicitly add Session to the module
+    # Relationship to messages
+    messages = relationship("Message", back_populates="session", cascade="all, delete-orphan")
+
+
+class Message(Base):
+    """
+    Message model for storing session message history.
+    Matches the OpenCode agent server message format.
+    
+    OpenCode message format:
+    {
+        "info": {
+            "id": "msg_xxx",
+            "sessionID": "session_xxx",
+            "role": "user" | "assistant",
+            "time": {"created": 1731000000000}
+        },
+        "parts": [
+            {"type": "text", "text": "..."},
+            {"type": "tool_use", "id": "...", "name": "...", "input": {...}},
+            {"type": "tool_result", "id": "...", "content": "..."}
+        ]
+    }
+    """
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    
+    # OpenCode message ID (from info.id)
+    message_id = Column(String, unique=True, index=True, nullable=False)
+    
+    # Foreign key to session (using session_id string, not the integer id)
+    session_id = Column(String, ForeignKey("sessions.session_id"), nullable=False, index=True)
+    
+    # Message role: "user" or "assistant"
+    role = Column(String, nullable=False, index=True)
+    
+    # Message parts stored as JSON string
+    # Contains array of parts: [{type: "text", text: "..."}, {type: "tool_use", ...}]
+    parts = Column(Text, nullable=False)
+    
+    # Timestamp from OpenCode (Unix timestamp in milliseconds)
+    created_timestamp = Column(BigInteger, nullable=True)
+    
+    # Model information (for assistant messages)
+    provider_id = Column(String, nullable=True)
+    model_id = Column(String, nullable=True)
+    
+    # Token usage information
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    
+    # Cost information
+    cost = Column(String, nullable=True)  # Stored as string to preserve precision
+    
+    # Local timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationship back to session
+    session = relationship("Session", back_populates="messages")
+
+    def __repr__(self):
+        return f"<Message(message_id={self.message_id}, session_id={self.session_id}, role={self.role})>"
+
+    def to_opencode_format(self) -> dict:
+        """Convert to OpenCode message format"""
+        import json
+        return {
+            "info": {
+                "id": self.message_id,
+                "sessionID": self.session_id,
+                "role": self.role,
+                "time": {"created": self.created_timestamp} if self.created_timestamp else None,
+                "model": {
+                    "providerID": self.provider_id,
+                    "modelID": self.model_id
+                } if self.provider_id and self.model_id else None,
+                "tokens": {
+                    "input": self.input_tokens,
+                    "output": self.output_tokens
+                } if self.input_tokens is not None or self.output_tokens is not None else None,
+                "cost": float(self.cost) if self.cost else None
+            },
+            "parts": json.loads(self.parts) if isinstance(self.parts, str) else self.parts
+        }
+
+    @classmethod
+    def from_opencode_format(cls, data: dict, session_id: str) -> "Message":
+        """Create Message from OpenCode message format"""
+        import json
+        info = data.get("info", {})
+        time_info = info.get("time", {})
+        model_info = info.get("model", {})
+        tokens_info = info.get("tokens", {})
+        
+        return cls(
+            message_id=info.get("id"),
+            session_id=session_id,
+            role=info.get("role", "user"),
+            parts=json.dumps(data.get("parts", [])),
+            created_timestamp=time_info.get("created") if time_info else None,
+            provider_id=model_info.get("providerID") if model_info else None,
+            model_id=model_info.get("modelID") if model_info else None,
+            input_tokens=tokens_info.get("input") if tokens_info else None,
+            output_tokens=tokens_info.get("output") if tokens_info else None,
+            cost=str(info.get("cost")) if info.get("cost") is not None else None
+        )
+
+
+# Explicitly add Session and Message to the module
 import sys
 current_module = sys.modules[__name__]
 current_module.Session = Session
+current_module.Message = Message
 
 

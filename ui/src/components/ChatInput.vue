@@ -14,7 +14,7 @@
           @keydown.enter.exact="handleEnter"
           @input="adjustHeight"
           :disabled="disabled"
-          placeholder="Type your message..."
+          :placeholder="placeholder"
           class="w-full px-0 py-2 border-0 bg-transparent text-gray-800 placeholder-gray-400 focus:ring-0 focus:outline-none resize-none min-h-[52px] max-h-[200px] text-base leading-relaxed"
           :class="{ 'opacity-50 cursor-not-allowed': disabled }"
           rows="1"
@@ -94,6 +94,10 @@ const props = defineProps({
   disabled: {
     type: Boolean,
     default: false
+  },
+  placeholder: {
+    type: String,
+    default: 'Type your message...'
   }
 })
 
