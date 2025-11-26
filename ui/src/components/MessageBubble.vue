@@ -58,51 +58,52 @@
 
       <!-- Main Content -->
       <div class="space-y-3">
-        <!-- Primary Text Content -->
-        <div v-if="primaryText" class="prose prose-sm max-w-none" v-html="formatText(primaryText)"></div>
-        
-        <!-- Tool Executions -->
-        <div v-if="toolParts.length > 0" class="space-y-2">
-          <h4 class="text-sm font-bold flex items-center gap-2" :class="message.info?.role === 'user' ? 'text-white/90' : 'text-gray-800'">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            Tool Executions
-          </h4>
+        <template v-for="(part, index) in visibleParts" :key="index">
+          <!-- Text Content -->
+          <div v-if="part.type === 'text'" class="prose prose-sm max-w-none" v-html="formatText(part.text)"></div>
           
-          <div v-for="tool in toolParts" :key="tool.id" class="card bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-200 p-4 hover:shadow-lg transition-shadow">
+          <!-- Reasoning Content -->
+          <div v-else-if="part.type === 'reasoning'" class="bg-yellow-50 p-3 rounded-lg text-sm text-gray-700 border border-yellow-200 italic">
+            <div class="flex items-center gap-2 mb-1 text-yellow-800 font-semibold text-xs uppercase tracking-wider">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+              Reasoning
+            </div>
+            {{ part.text }}
+          </div>
+
+          <!-- Tool Execution -->
+          <div v-else-if="part.type === 'tool'" class="card bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-200 p-4 hover:shadow-lg transition-shadow my-2">
             <div class="flex items-center gap-2 mb-3">
               <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
-              <span class="font-bold text-blue-900">{{ tool.tool }} command</span>
-              <span class="status-badge" :class="getStatusClass(tool.state?.status)">
-                {{ tool.state?.status || 'unknown' }}
+              <span class="font-bold text-blue-900">{{ part.tool }} command</span>
+              <span class="status-badge" :class="getStatusClass(part.state?.status)">
+                {{ part.state?.status || 'unknown' }}
               </span>
             </div>
             
-            <div v-if="tool.state?.input?.command" class="text-sm text-gray-800 mb-2">
+            <div v-if="part.state?.input?.command" class="text-sm text-gray-800 mb-2">
               <strong class="text-gray-900">Command:</strong> 
-              <code class="bg-white px-2 py-1 rounded-lg text-xs font-mono border border-gray-200">{{ tool.state.input.command }}</code>
+              <code class="bg-white px-2 py-1 rounded-lg text-xs font-mono border border-gray-200">{{ part.state.input.command }}</code>
             </div>
             
-            <div v-if="tool.state?.input?.description" class="text-sm text-gray-700 mb-2">
-              {{ tool.state.input.description }}
+            <div v-if="part.state?.input?.description" class="text-sm text-gray-700 mb-2">
+              {{ part.state.input.description }}
             </div>
             
-            <div v-if="tool.state?.output" class="bg-gray-900 text-green-400 p-4 rounded-xl font-mono text-sm overflow-x-auto shadow-inner">
-              <pre>{{ tool.state.output }}</pre>
+            <div v-if="part.state?.output" class="bg-gray-900 text-green-400 p-4 rounded-xl font-mono text-sm overflow-x-auto shadow-inner">
+              <pre>{{ part.state.output }}</pre>
             </div>
             
-            <div v-if="tool.state?.time" class="text-xs text-gray-600 mt-2 flex items-center gap-1">
+            <div v-if="part.state?.time" class="text-xs text-gray-600 mt-2 flex items-center gap-1">
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              Duration: {{ toolDuration(tool) }}ms
+              Duration: {{ toolDuration(part) }}ms
             </div>
           </div>
-        </div>
+        </template>
       </div>
 
       <!-- Technical Details (Collapsible) -->
@@ -208,20 +209,6 @@ const visibleParts = computed(() => {
     
     return true
   })
-})
-
-// Get primary text content (first non-empty text part)
-const primaryText = computed(() => {
-  const textParts = props.message.parts?.filter(part => 
-    part.type === 'text' && part.text && part.text.trim() !== ''
-  ) || []
-  
-  return textParts.length > 0 ? textParts[0].text : ''
-})
-
-// Get tool parts
-const toolParts = computed(() => {
-  return props.message.parts?.filter(part => part.type === 'tool') || []
 })
 
 // Check if message has technical details to show

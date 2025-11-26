@@ -8,39 +8,13 @@ export const useChatStore = defineStore('chat', () => {
   const loading = ref(false)
   const error = ref(null)
   const streaming = ref(false)
+  const messagesLoading = ref(false)
   
   // Model selection state
   const selectedProvider = ref('github-copilot')
   const selectedModel = ref('gpt-5-mini')
   const availableModels = ref(null)
   const modelsLoading = ref(false)
-
-  // Load messages from localStorage on initialization
-  const loadMessagesFromStorage = () => {
-    try {
-      const stored = localStorage.getItem('opencode_chat_messages')
-      if (stored) {
-        messagesBySession.value = JSON.parse(stored)
-      }
-    } catch (e) {
-      console.error('Failed to load messages from localStorage:', e)
-    }
-  }
-
-  // Save messages to localStorage
-  const saveMessagesToStorage = () => {
-    try {
-      localStorage.setItem('opencode_chat_messages', JSON.stringify(messagesBySession.value))
-    } catch (e) {
-      console.error('Failed to save messages to localStorage:', e)
-    }
-  }
-
-  // Initialize from localStorage
-  loadMessagesFromStorage()
-
-  // Watch for changes and save to localStorage
-  watch(messagesBySession, saveMessagesToStorage, { deep: true })
 
   function getMessages(sessionId) {
     if (!messagesBySession.value[sessionId]) {
@@ -54,6 +28,10 @@ export const useChatStore = defineStore('chat', () => {
       messagesBySession.value[sessionId] = []
     }
     messagesBySession.value[sessionId].push(message)
+  }
+
+  function setMessages(sessionId, messages) {
+    messagesBySession.value[sessionId] = messages
   }
 
   function updateLastMessage(sessionId, content) {
@@ -86,13 +64,13 @@ export const useChatStore = defineStore('chat', () => {
       const response = await backendApi.sendMessage(sessionId, prompt)
 
       // Add assistant response
-      if (response.content) {
+      if (response.content || (response.parts && response.parts.length > 0)) {
         addMessage(sessionId, {
           info: {
             role: 'assistant',
             time: { created: Date.now() }
           },
-          parts: [{
+          parts: response.parts || [{
             type: 'text',
             text: response.content
           }]
@@ -187,18 +165,29 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function loadMessages(sessionId) {
+    messagesLoading.value = true
     try {
-      // Messages are now stored locally in messagesBySession
-      // No need to fetch from agent since we manage them via backend API
-      if (!messagesBySession.value[sessionId]) {
-        messagesBySession.value[sessionId] = []
+      // Fetch messages from backend API (which gets them from OpenCode agent)
+      const response = await backendApi.getMessages(sessionId)
+      
+      if (response.status === 'success' && response.messages) {
+        // Messages from OpenCode agent are already in the correct format
+        setMessages(sessionId, response.messages)
+        console.log(`Loaded ${response.messages.length} messages for session ${sessionId}`)
+      } else {
+        // Initialize empty array if no messages
+        if (!messagesBySession.value[sessionId]) {
+          messagesBySession.value[sessionId] = []
+        }
       }
     } catch (e) {
-      console.error('Failed to load messages:', e)
-      // Ensure messages array exists
+      console.error('Failed to load messages from server:', e)
+      // Ensure messages array exists even on error
       if (!messagesBySession.value[sessionId]) {
         messagesBySession.value[sessionId] = []
       }
+    } finally {
+      messagesLoading.value = false
     }
   }
 
@@ -260,12 +249,14 @@ export const useChatStore = defineStore('chat', () => {
     loading,
     error,
     streaming,
+    messagesLoading,
     selectedProvider,
     selectedModel,
     availableModels,
     modelsLoading,
     getMessages,
     addMessage,
+    setMessages,
     sendMessage,
     sendMessageStream,
     clearMessages,

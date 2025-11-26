@@ -157,6 +157,12 @@ export const backendApi = {
     return response.data
   },
 
+  // Get messages from OpenCode agent
+  async getMessages(sessionId) {
+    const response = await api.get(`/backend/sessions/${sessionId}/messages`)
+    return response.data
+  },
+
   // Analytics
   async getSessionStats() {
     const response = await api.get('/backend/sessions/stats/overview')
@@ -193,11 +199,32 @@ export const backendApi = {
     return response.data
   },
 
-  async writeFile(sessionId, path, content) {
+  async writeFile(sessionId, path, content, encoding = 'utf-8') {
     const response = await api.post(`/backend/sessions/${sessionId}/files/write`, 
-      { content },
+      { content, encoding },
       { params: { path } }
     )
+    return response.data
+  },
+
+  async deleteFile(sessionId, path) {
+    const response = await api.delete(`/backend/sessions/${sessionId}/files/delete`, {
+      params: { path }
+    })
+    return response.data
+  },
+
+  async createDirectory(sessionId, path) {
+    const response = await api.post(`/backend/sessions/${sessionId}/files/mkdir`, null, {
+      params: { path }
+    })
+    return response.data
+  },
+
+  async deleteDirectory(sessionId, path, recursive = false) {
+    const response = await api.delete(`/backend/sessions/${sessionId}/files/rmdir`, {
+      params: { path, recursive }
+    })
     return response.data
   }
 }

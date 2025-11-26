@@ -123,11 +123,17 @@ def run_session_container(session_id: str, image: str, environment: Dict[str, st
     Returns:
         Container ID
     """
+    # Define workspace directory path
+    workspace_dir = f"/mnt/volume/{session_id}/workspace"
+    
     if is_agent:
-        # Agent container: run opencode serve
+        # Agent container: run opencode serve with workspace as working directory
         entrypoint_script = f'''
 # Create persistent OpenCode config directory in the main volume
 mkdir -p /mnt/volume/{session_id}/opencode-data
+
+# Create workspace directory for agent to work in
+mkdir -p {workspace_dir}
 
 # Remove /root/.local/share/opencode if it exists and create parent directory
 rm -rf /root/.local/share/opencode
@@ -145,6 +151,12 @@ fi
 echo "Symlink created: /root/.local/share/opencode -> /mnt/volume/{session_id}/opencode-data"
 ls -la /root/.local/share/
 
+# Change to workspace directory before starting OpenCode
+cd {workspace_dir}
+echo "Working directory: $(pwd)"
+echo "Workspace contents:"
+ls -la
+
 echo "Starting OpenCode agent server for session {session_id}"
 opencode serve --port 4096 --hostname 0.0.0.0 --print-logs
 '''
@@ -153,6 +165,7 @@ opencode serve --port 4096 --hostname 0.0.0.0 --print-logs
         # Default environment for agent
         env_vars = {
             "SESSION_ID": session_id,
+            "WORKSPACE_DIR": workspace_dir,
         }
         
         # Add agent token if provided
@@ -164,6 +177,9 @@ opencode serve --port 4096 --hostname 0.0.0.0 --print-logs
         entrypoint_script = f'''
 # Create persistent OpenCode config directory in the main volume
 mkdir -p /mnt/volume/{session_id}/opencode-data
+
+# Create workspace directory
+mkdir -p {workspace_dir}
 
 # Remove /root/.local/share/opencode if it exists and create parent directory
 rm -rf /root/.local/share/opencode
@@ -177,7 +193,10 @@ if [ -f /mnt/volume/{session_id}/auth.json ]; then
     cp /mnt/volume/{session_id}/auth.json /mnt/volume/{session_id}/opencode-data/auth.json
 fi
 
-echo "Session {session_id} container started"
+# Change to workspace directory
+cd {workspace_dir}
+
+echo "Session {session_id} container started in workspace: $(pwd)"
 sleep infinity
 '''
         container_name = f"opencode-session-{session_id}"
@@ -185,6 +204,7 @@ sleep infinity
         # Default environment
         env_vars = {
             "SESSION_ID": session_id,
+            "WORKSPACE_DIR": workspace_dir,
             "DB_PASSWORD": "my-super-secret-password-12345",
             "API_KEY": "sk-1234567890abcdef",
             "SECRET_TOKEN": "token-xyz-987654321"
@@ -206,6 +226,7 @@ sleep infinity
         name=container_name,
         environment=env_vars,
         volumes=volumes,
+        working_dir=workspace_dir,  # Set working directory for container
         network="opencode-ui_opencode-network" if is_agent else None,  # Join network for agent containers
         ports={'4096/tcp': None} if is_agent else None,  # Expose port 4096 for agent containers
         command=['sh', '-c', entrypoint_script]

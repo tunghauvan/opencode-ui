@@ -73,9 +73,9 @@ export const useSessionStore = defineStore('session', () => {
   async function selectSession(sessionId) {
     currentSessionId.value = sessionId
 
-    // Initialize local message storage for this session
+    // Load messages from the OpenCode agent server
     const chatStore = useChatStore()
-    chatStore.initializeSession(sessionId)
+    await chatStore.loadMessages(sessionId)
   }
 
   async function startContainer(sessionId, containerConfig = {}) {

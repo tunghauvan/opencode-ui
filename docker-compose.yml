@@ -10,11 +10,13 @@ services:
       - ./config/requirements.txt:/app/requirements.txt
       - ./.env:/app/.env
       - ./data:/app/data
+      - opencode-sessions:/mnt/volume  # Shared workspace volume
     environment:
       - DATABASE_URL=sqlite:///./data/db.sqlite3
       - USE_MOCK=false
       - AGENT_CONTROLLER_URL=http://agent-controller:8001
       - AGENT_SERVICE_SECRET=default-secret-change-in-production
+      - WORKSPACE_VOLUME_PATH=/mnt/volume
     env_file:
       - .env
     networks:
@@ -76,6 +78,10 @@ services:
     command: ["python", "-u", "scripts/idle_watcher.py"]
     networks:
       - opencode-network
+
+volumes:
+  opencode-sessions:
+    external: true  # Use the existing opencode-sessions volume
 
 networks:
   opencode-network:
